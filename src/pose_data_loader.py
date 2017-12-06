@@ -6,15 +6,41 @@ Created on Tue Oct 31 15:44:12 2017
 """
 import cv2
 import numpy as np
-import os
+#import os
 import torch
 from torch.utils.data import Dataset
-from collections import deque
 import glob
 
 #import quaternions as quat
 from pose_renderer import camera2quat
 import transformations as tf
+
+def calc_viewloss_vec(size, sigma):
+    band    = np.linspace(-1*size, size, 1 + 2*size, dtype=np.int16)
+    vec     = np.linspace(-1*size, size, 1 + 2*size, dtype=np.float)
+    prob    = np.exp(-1 * abs(vec) / sigma)
+    prob    = prob / np.sum(prob)
+
+    return band, prob
+
+def label_to_probs(angle, angle_bins = 360, band_width = 7, sigma=5):
+    '''
+    Returns three arrays for the viewpoint labels, one for each rotation axis.
+    A label is given by angle
+    :return:
+    '''
+    # Calculate object multiplier
+    angle = int(angle)
+    label = np.zeros(angle_bins, dtype=np.float)
+    
+    # calculate probabilities
+    band, prob = calc_viewloss_vec(band_width, sigma)
+
+    for i in band:
+        ind = np.mod(angle + i + 360, 360)
+        label[ind] = prob[i + band_width]
+
+    return label
 
 def resizeAndPad(img, size, padColor=0):
 
@@ -201,17 +227,13 @@ class PoseDataLoader(Dataset):
         angles = tf.euler_from_quaternion(d_quat)
         d_euler = np.round(np.array(angles)*self.euler_bins/(2.*np.pi))
         
-        d_azim = torch.FloatTensor(self.euler_bins)
-        d_azim.zero_()
-        d_azim[d_euler[0]] = 1.0
-        d_elev = torch.FloatTensor(self.euler_bins)
-        d_elev.zero_()
-        d_elev[d_euler[1]] = 1.0
-        d_tilt = torch.FloatTensor(self.euler_bins)
-        d_tilt.zero_()
-        d_tilt[d_euler[2]] = 1.0
-            
-        return origin_img, query_img, conj_q, d_azim, d_elev, d_tilt
+        d_azim = torch.from_numpy(label_to_probs(d_euler[0], self.euler_bins))
+        d_elev = torch.from_numpy(label_to_probs(d_euler[1], self.euler_bins))
+        d_tilt = torch.from_numpy(label_to_probs(d_euler[2], self.euler_bins))
+           
+        d_quat = torch.from_numpy(d_quat)
+
+        return origin_img, query_img, conj_q, d_quat, d_azim, d_elev, d_tilt, d_euler
 
     def __len__(self):
         return len(self.filenames)
