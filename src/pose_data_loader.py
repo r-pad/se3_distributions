@@ -101,6 +101,7 @@ class PoseDataLoader(Dataset):
         self.models = []
         self.model_idxs = {}
         self.euler_bins = 360
+        self.max_offset = np.pi/2
         
         idx = 0;
         files = glob.glob(self.data_dir + '/**/*.png', recursive=True)
@@ -195,33 +196,40 @@ class PoseDataLoader(Dataset):
         
         query_idx = self.model_idxs[model][np.random.randint(0, len(self.model_idxs[model]))]
         assert len(self.model_idxs[model]) > 1, "Model must have > 1 view (model: {})".format(model)
-        while True:
-            #print(model, query_idx, index)
-            query_idx = self.model_idxs[model][np.random.randint(0, len(self.model_idxs[model]))]    
-            if(query_idx != index):
-                break
+
+        orientation_diff = float('inf')
+        
+        while orientation_diff > self.max_offset:
+            diff_not_found = True
+            while diff_not_found:
+                #print(model, query_idx, index)
+                query_idx = self.model_idxs[model][np.random.randint(0, len(self.model_idxs[model]))]    
+                if(query_idx != index):
+                    diff_not_found = False
+                
+            query_filename = self.filenames[query_idx]
+            query_pose = self.quats[query_idx]
+    #        query_euler = self.eulers[query_idx]
             
-        query_filename = self.filenames[query_idx]
-        query_pose = self.quats[query_idx]
-#        query_euler = self.eulers[query_idx]
+            origin_img = cv2.imread(origin_filename)
+            query_img = cv2.imread(query_filename)
+            
+            if (len(origin_img.shape) == 2):
+                origin_img = np.expand_dims(origin_img, axis=2)
+                query_img = np.expand_dims(query_img, axis=2)
+            
+            origin_img = resizeAndPad(origin_img, self.img_size)
+            query_img = resizeAndPad(query_img, self.img_size)
+            
+            origin_img = origin_img.astype('float32')
+            query_img = query_img.astype('float32')
+            origin_img = np.rollaxis(origin_img, 2)
+            query_img = np.rollaxis(query_img, 2)
+            
+            d_quat = tf.quaternion_multiply(query_pose, 
+                                            tf.quaternion_conjugate(origin_pose))
         
-        origin_img = cv2.imread(origin_filename)
-        query_img = cv2.imread(query_filename)
-        
-        if (len(origin_img.shape) == 2):
-            origin_img = np.expand_dims(origin_img, axis=2)
-            query_img = np.expand_dims(query_img, axis=2)
-        
-        origin_img = resizeAndPad(origin_img, self.img_size)
-        query_img = resizeAndPad(query_img, self.img_size)
-        
-        origin_img = origin_img.astype('float32')
-        query_img = query_img.astype('float32')
-        origin_img = np.rollaxis(origin_img, 2)
-        query_img = np.rollaxis(query_img, 2)
-        
-        d_quat = tf.quaternion_multiply(query_pose, 
-                                        tf.quaternion_conjugate(origin_pose))
+            orientation_diff = 2.0*np.arccos(d_quat[3])
         
         conj_q = torch.from_numpy(tf.quaternion_conjugate(d_quat))
         angles = tf.euler_from_quaternion(d_quat)

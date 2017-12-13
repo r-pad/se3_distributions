@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from torch import nn
 
 class ViewpointLoss(nn.Module):
-    def __init__(self, class_period = 360, mean = False):
+    def __init__(self, class_period = 360, mean = True):
         super(ViewpointLoss, self).__init__()
         self.class_period = class_period
         self.mean = mean
@@ -35,8 +35,18 @@ class ViewpointLoss(nn.Module):
         
         for inst_id in range(batch_size):
             if self.mean:
-                loss -= (labels[inst_id, :] * F.log_softmax(preds[inst_id, :] / preds[inst_id, :].abs().sum())).mean()
+                loss -= (labels[inst_id, :] * F.log_softmax(preds[inst_id, :])).mean()
             else:
-                loss -= (labels[inst_id, :] * F.log_softmax(preds[inst_id, :] / preds[inst_id, :].abs().sum())).sum()
+                loss -= (labels[inst_id, :] * F.log_softmax(preds[inst_id, :])).sum()
 
+#        if self.mean:
+#            loss = -(labels * F.log_softmax(preds)).mean(1)
+#        else:
+#            loss = -(labels * F.log_softmax(preds)).sum(1)
+#        loss = loss.sum()
         return loss
+        
+def viewpointAccuracy(preds, labels):
+    acc = 180 - ((preds.max(1)[1] - labels.max(1)[1]).abs() - 180).abs().data.cpu().numpy()
+    return acc.sum() / acc.shape[0]
+    #return acc
