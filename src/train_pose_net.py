@@ -205,6 +205,9 @@ def train_with_dataloader(args):#, model):
                 v_err_azim = viewpointAccuracy(v_azim_est, v_d_azim)
                 v_err_elev = viewpointAccuracy(v_elev_est, v_d_elev)
                 v_err_tilt = viewpointAccuracy(v_tilt_est, v_d_tilt)
+
+                print("epoch {} :: cumulative_batch_idx {}".format(epoch_idx, cumulative_batch_idx + 1))
+                
 #                print("epoch {} :: cumulative_batch_idx {} :: \nloss quat {}, \nloss azim {}, \nloss elev {}, \nloss tilt {}, \nacc azim {}, \nacc elev {}, \nacc tilt {}".format(epoch_idx, cumulative_batch_idx + 1, 
 #                      running_loss_quat / args.print_loss_every_nth, 
 #                      running_loss_azim / args.print_loss_every_nth,
@@ -316,6 +319,7 @@ def train_with_dataloader(args):#, model):
 #                                                                   print("saving model ", os.path.join(results_dir, 'epoch_{}_batch_{}_lq_{:.4f}_la_{:.4f}_le_{:.4f}_lt_{:.4f}.pth'.\
 #                                                            format(epoch_idx, str(cumulative_batch_idx).zfill(8), 
 #                                                                   loss_quat.data[0], loss_azim.data[0], loss_elev.data[0], loss_tilt.data[0])))
+                print("saving model")
                 torch.save(model.state_dict(), os.path.join(results_dir, 'weights.pth'))
             cumulative_batch_idx += 1
 
