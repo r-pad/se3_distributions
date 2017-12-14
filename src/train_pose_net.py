@@ -81,12 +81,12 @@ def train_with_dataloader(args):#, model):
     logger = Logger(log_dir)
 
     # init empty loss files
-    running_loss_file = os.path.join(results_dir, 'running_loss.txt')
-    instantaneous_loss_file = os.path.join(results_dir, 'instantaneous_loss.txt')
-    binned_loss_file = os.path.join(results_dir, 'binned_loss.txt')
-    open(os.path.join(results_dir, 'running_loss.txt'), 'a').close()
-    open(os.path.join(results_dir, 'instantaneous_loss.txt'), 'a').close()
-    open(os.path.join(results_dir, 'binned_loss.txt'), 'a').close()
+#    running_loss_file = os.path.join(results_dir, 'running_loss.txt')
+#    instantaneous_loss_file = os.path.join(results_dir, 'instantaneous_loss.txt')
+#    binned_loss_file = os.path.join(results_dir, 'binned_loss.txt')
+#    open(os.path.join(results_dir, 'running_loss.txt'), 'a').close()
+#    open(os.path.join(results_dir, 'instantaneous_loss.txt'), 'a').close()
+#    open(os.path.join(results_dir, 'binned_loss.txt'), 'a').close()
 
     cumulative_batch_idx = 0
     running_loss_quat = 0.0
