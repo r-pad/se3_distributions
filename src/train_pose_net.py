@@ -16,7 +16,7 @@ import numpy as np
 import os
 import datetime, os
 
-from pose_data_loader import PoseDataLoader
+from pose_data_loader import PoseDirDataSet, PoseFileDataSet
 from gen_pose_net import gen_pose_net, gen_pose_net_stacked
 from viewpoint_loss import ViewpointLoss, viewpointAccuracy
 from quaternion_loss import quaternionLoss
@@ -42,12 +42,31 @@ def train_with_dataloader(args):#, model):
     
     model.train()
     model.cuda()
-    loader = DataLoader(PoseDataLoader(data_dir=args.train_data_dir,
-                                       img_size= (args.width, args.height)),
-                        num_workers=args.num_workers, 
-                        batch_size=args.batch_size, 
-                        shuffle=True)
+#    loader = DataLoader(PoseDirDataSet(data_dir = args.train_data_dir,
+#                                       img_size = (args.width, args.height)),
+#                        num_workers=args.num_workers, 
+#                        batch_size=args.batch_size, 
+#                        shuffle=True)
+    
+    with open(args.train_data_file, 'r') as f:    
+        train_filenames = f.read().split()
+    with open(args.valid_data_file, 'r') as f:    
+        valid_filenames = f.read().split()                
+    
+    train_loader = DataLoader(PoseFileDataSet(render_filenames = train_filenames,
+                                              img_size = (args.width, args.height),
+                                              max_orientation_offset = args.max_orientation_offset),
+                              num_workers=args.num_workers, 
+                              batch_size=args.batch_size, 
+                              shuffle=True)
 
+    valid_loader = DataLoader(PoseFileDataSet(render_filenames = valid_filenames,
+                                              img_size = (args.width, args.height),
+                                              max_orientation_offset = args.max_orientation_offset),
+                              num_workers=args.num_workers, 
+                              batch_size=args.batch_size, 
+                              shuffle=True)
+                              
     optimizer = Adadelta(model.parameters())
 
     current_timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
@@ -98,7 +117,7 @@ def train_with_dataloader(args):#, model):
     print('Starting Training')
 
     for epoch_idx in range(1, args.num_epochs+1):
-        for batch_idx, (origin, query, conj_q, d_quat, d_azim, d_elev, d_tilt, d_euler) in enumerate(loader):
+        for batch_idx, (origin, query, conj_q, d_quat, d_azim, d_elev, d_tilt, d_euler) in enumerate(train_loader):
             origin = to_var(origin)
             query = to_var(query)
             conj_q = to_var(conj_q)
@@ -165,33 +184,54 @@ def train_with_dataloader(args):#, model):
 #                binned_count_tilt[t_i] += 1            
             
             if cumulative_batch_idx>0 and not(cumulative_batch_idx % args.print_loss_every_nth):
-                print("epoch {} :: cumulative_batch_idx {} :: \nloss quat {}, \nloss azim {}, \nloss elev {}, \nloss tilt {}, \nacc azim {}, \nacc elev {}, \nacc tilt {}".format(epoch_idx, cumulative_batch_idx + 1, 
-                      running_loss_quat / args.print_loss_every_nth, 
-                      running_loss_azim / args.print_loss_every_nth,
-                      running_loss_elev / args.print_loss_every_nth,
-                      running_loss_tilt / args.print_loss_every_nth,
-                      running_err_azim / args.print_loss_every_nth,
-                      running_err_elev / args.print_loss_every_nth,
-                      running_err_tilt / args.print_loss_every_nth))
+                v_origin, v_query, v_conj_q, v_d_quat, v_d_azim, v_d_elev, v_d_tilt, v_d_euler = next(iter(valid_loader))
+                v_origin = to_var(v_origin)
+                v_query = to_var(v_query)
+                v_conj_q = to_var(v_conj_q)
+                v_d_quat = to_var(v_d_quat)
+                v_d_azim = to_var(v_d_azim)
+                v_d_elev = to_var(v_d_elev)
+                v_d_tilt = to_var(v_d_tilt)
+            
+                v_quat_est, v_azim_est, v_elev_est, v_tilt_est = model.forward(v_origin, v_query)
+                
+                v_loss_quat = quaternionLoss(v_quat_est, v_d_quat)
+
+                v_loss_azim = euler_loss(v_azim_est, v_d_azim)
+                v_loss_elev = euler_loss(v_elev_est, v_d_elev)
+                v_loss_tilt = euler_loss(v_tilt_est, v_d_tilt)
+                v_loss_euler = v_loss_azim + v_loss_elev + v_loss_tilt
+                
+                v_err_azim = viewpointAccuracy(v_azim_est, v_d_azim)
+                v_err_elev = viewpointAccuracy(v_elev_est, v_d_elev)
+                v_err_tilt = viewpointAccuracy(v_tilt_est, v_d_tilt)
+#                print("epoch {} :: cumulative_batch_idx {} :: \nloss quat {}, \nloss azim {}, \nloss elev {}, \nloss tilt {}, \nacc azim {}, \nacc elev {}, \nacc tilt {}".format(epoch_idx, cumulative_batch_idx + 1, 
+#                      running_loss_quat / args.print_loss_every_nth, 
+#                      running_loss_azim / args.print_loss_every_nth,
+#                      running_loss_elev / args.print_loss_every_nth,
+#                      running_loss_tilt / args.print_loss_every_nth,
+#                      running_err_azim / args.print_loss_every_nth,
+#                      running_err_elev / args.print_loss_every_nth,
+#                      running_err_tilt / args.print_loss_every_nth))
                       
 #                print(torch.stack([d_azim.max(1)[1].data, azim_est.max(1)[1].data, 
 #                                   d_elev.max(1)[1].data, elev_est.max(1)[1].data, 
 #                                   d_tilt.max(1)[1].data, tilt_est.max(1)[1].data]).transpose(0,1))
                         
-                with open(instantaneous_loss_file, "a") as f:
-                    f.write(str(cumulative_batch_idx) 
-                        + ", " + str(loss_quat.data[0]) 
-                        + ", " + str(loss_azim.data[0]) 
-                        + ", " + str(loss_elev.data[0])
-                        + ", " + str(loss_tilt.data[0])
-                        + '\n')
-                with open(running_loss_file, "a") as f:
-                    f.write(str(cumulative_batch_idx) 
-                        + ", " + str(running_loss_quat / args.print_loss_every_nth) 
-                        + ", " + str(running_loss_azim / args.print_loss_every_nth) 
-                        + ", " + str(running_loss_elev / args.print_loss_every_nth) 
-                        + ", " + str(running_loss_tilt / args.print_loss_every_nth) 
-                        + '\n')
+#                with open(instantaneous_loss_file, "a") as f:
+#                    f.write(str(cumulative_batch_idx) 
+#                        + ", " + str(loss_quat.data[0]) 
+#                        + ", " + str(loss_azim.data[0]) 
+#                        + ", " + str(loss_elev.data[0])
+#                        + ", " + str(loss_tilt.data[0])
+#                        + '\n')
+#                with open(running_loss_file, "a") as f:
+#                    f.write(str(cumulative_batch_idx) 
+#                        + ", " + str(running_loss_quat / args.print_loss_every_nth) 
+#                        + ", " + str(running_loss_azim / args.print_loss_every_nth) 
+#                        + ", " + str(running_loss_elev / args.print_loss_every_nth) 
+#                        + ", " + str(running_loss_tilt / args.print_loss_every_nth) 
+#                        + '\n')
 #                import IPython; IPython.embed()
 #                with open(binned_loss_file, "a") as f:
 #                    f.write(str(cumulative_batch_idx) 
@@ -228,14 +268,22 @@ def train_with_dataloader(args):#, model):
                                 #============ TensorBoard logging ============#
                 # (1) Log the scalar values
                 info = {
-                    'loss_quat': loss_quat.data[0],
-                    'loss_azim': loss_azim.data[0],
-                    'loss_elev': loss_elev.data[0],
-                    'loss_tilt': loss_tilt.data[0],
-                    'loss_euler': loss_euler.data[0],
-                    'err_azim': err_azim,
-                    'err_elev': err_elev,
-                    'err_tilt': err_tilt,
+                    'train_loss_quat': loss_quat.data[0],
+                    'train_loss_azim': loss_azim.data[0],
+                    'train_loss_elev': loss_elev.data[0],
+                    'train_loss_tilt': loss_tilt.data[0],
+                    'train_loss_euler': loss_euler.data[0],
+                    'train_err_azim': err_azim,
+                    'train_err_elev': err_elev,
+                    'train_err_tilt': err_tilt,
+                    'valid_loss_quat': v_loss_quat.data[0],
+                    'valid_loss_azim': v_loss_azim.data[0],
+                    'valid_loss_elev': v_loss_elev.data[0],
+                    'valid_loss_tilt': v_loss_tilt.data[0],
+                    'valid_loss_euler': v_loss_euler.data[0],
+                    'valid_err_azim': v_err_azim,
+                    'valid_err_elev': v_err_elev,
+                    'valid_err_tilt': v_err_tilt,
                 }
         
                 for tag, value in info.items():
@@ -249,20 +297,26 @@ def train_with_dataloader(args):#, model):
         
                 # (3) Log the images
                 info = {
-                    'origin': to_np(origin.view(-1, 3, args.width, args.height)[:10]),
-                    'query': to_np(query.view(-1, 3, args.width, args.height)[:10]),
+                    'train_origin': to_np(origin.view(-1, 3, args.width, args.height)[:10]),
+                    'train_query': to_np(query.view(-1, 3, args.width, args.height)[:10]),                                         
+                    'valid_origin': to_np(v_origin.view(-1, 3, args.width, args.height)[:10]),
+                    'valid_query': to_np(v_query.view(-1, 3, args.width, args.height)[:10]),
                 }
         
                 for tag, images in info.items():
                     logger.image_summary(tag, images, cumulative_batch_idx+1)
 
             if cumulative_batch_idx>0 and not(cumulative_batch_idx % args.save_every_nth): 
-                print("saving model ", os.path.join(results_dir, 'epoch_{}_batch_{}_lq_{:.4f}_la_{:.4f}_le_{:.4f}_lt_{:.4f}.pth'.\
-                                                            format(epoch_idx, str(cumulative_batch_idx).zfill(8), 
-                                                                   loss_quat.data[0], loss_azim.data[0], loss_elev.data[0], loss_tilt.data[0])))
-                torch.save(model.state_dict(), os.path.join(results_dir, 'epoch_{}_batch_{}_lq_{:.4f}_la_{:.4f}_le_{:.4f}_lt_{:.4f}.pth'.\
-                                                            format(epoch_idx, str(cumulative_batch_idx).zfill(8), 
-                                                                   loss_quat.data[0], loss_azim.data[0], loss_elev.data[0], loss_tilt.data[0])))
+#                print("saving model ", os.path.join(results_dir, 'epoch_{}_batch_{}_lq_{:.4f}_la_{:.4f}_le_{:.4f}_lt_{:.4f}.pth'.\
+#                                                            format(epoch_idx, str(cumulative_batch_idx).zfill(8), 
+#                                                                   loss_quat.data[0], loss_azim.data[0], loss_elev.data[0], loss_tilt.data[0])))
+#                torch.save(model.state_dict(), os.path.join(results_dir, 'epoch_{}_batch_{}_lq_{:.4f}_la_{:.4f}_le_{:.4f}_lt_{:.4f}.pth'.\
+#                                                            format(epoch_idx, str(cumulative_batch_idx).zfill(8), 
+#                                                                   loss_quat.data[0], loss_azim.data[0], loss_elev.data[0], loss_tilt.data[0])))
+#                                                                   print("saving model ", os.path.join(results_dir, 'epoch_{}_batch_{}_lq_{:.4f}_la_{:.4f}_le_{:.4f}_lt_{:.4f}.pth'.\
+#                                                            format(epoch_idx, str(cumulative_batch_idx).zfill(8), 
+#                                                                   loss_quat.data[0], loss_azim.data[0], loss_elev.data[0], loss_tilt.data[0])))
+                torch.save(model.state_dict(), os.path.join(results_dir, 'weights.pth'))
             cumulative_batch_idx += 1
 
 def main():
@@ -270,6 +324,9 @@ def main():
     parser.add_argument('--mode', type=str)
     parser.add_argument('--model', type=str)
     parser.add_argument('--train_data_dir', type=str, default='/media/bokorn/ExtraDrive1/render_cnn_data/model_images/syn_images/')
+    parser.add_argument('--train_data_file', type=str, default='/home/bokorn/src/generic_pose/generic_pose/src/chairs_100_train.txt')
+    parser.add_argument('--valid_data_file', type=str, default='/home/bokorn/src/generic_pose/generic_pose/src/chairs_100_valid.txt')
+    parser.add_argument('--max_orientation_offset', type=float, default=float('inf'))
     parser.add_argument('--results_dir', type=str, default='/media/bokorn/ExtraDrive2/posenet_results/') 
     #parser.add_argument('--log_dir', type=str, default='/media/bokorn/ExtraDrive1/posenet_logs/') 
     parser.add_argument('--save_every_nth', type=int, default=500)

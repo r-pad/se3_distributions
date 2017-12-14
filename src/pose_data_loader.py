@@ -88,25 +88,166 @@ def resizeAndPad(img, size, padColor=0):
 #filedir = os.path.abspath(os.path.join(filepath, os.pardir))
 #project_dir = os.path.abspath(os.path.join(filedir, os.pardir))
 
-
-
-class PoseDataLoader(Dataset):
-    def __init__(self, data_dir, img_size):
-        super(PoseDataLoader, self).__init__()
-        self.img_size = img_size
+class PoseDataSetGenerator(object):
+    def __init__(self, data_dir):
         self.data_dir = data_dir
+        self.data_dict = {}
+
+        files = glob.glob(self.data_dir + '/**/*.png', recursive=True)
+
+        for filename in files:                
+            [model_class, model, azimuth, elevation, tilt, depth] = filename.split('/')[-1].split('.')[-2].split('_')
+            azimuth = azimuth[1:]
+            elevation = elevation[1:]
+            tilt = tilt[1:]
+            
+            if(model_class not in self.data_dict):
+                self.data_dict[model_class] = {}
+
+            class_dict = self.data_dict[model_class]
+            
+            if(model not in class_dict):
+                class_dict[model] = []
+            
+            model_renders = class_dict[model]
+
+            q_blender = camera2quat(float(azimuth), 
+                                    float(elevation), 
+                                    float(tilt))
+            quat = np.roll(q_blender,-1)
+            model_renders.append({'filename':filename,
+                               'quat':quat})
+           
+    def modelTrainValidSplit(self, model, train_ratio = 1.0, 
+                             max_orientation_offset = float('inf')):
+                                 
+        for k, class_dict in self.data_dict.items():
+            if model in class_dict: 
+                model_renders = class_dict[model].copy()
+                break
+        
+        pairs = []        
+
+        num_renders = len(model_renders)
+
+        if(not np.isinf(max_orientation_offset)):
+            while num_renders > 1:
+                idx1 = np.random.randint(0, num_renders)
+                q1 = model_renders[idx1]['quat']
+                fn1 = model_renders[idx1]['filename']
+                del model_renders[idx1]
+                
+                idxs = np.arange(num_renders-1)
+                np.random.shuffle(idxs)
+                for idx2 in idxs:
+                    #idx2 = (idx1 + np.random.randint(1, num_renders))%num_renders
+                    q2 = model_renders[idx2]['quat']
+                    fn2 = model_renders[idx2]['filename']
+    
+                    dq = tf.quaternion_multiply(q1, tf.quaternion_conjugate(q2))
+                    orientation_diff = 2.0*np.arccos(dq[3])
+                    
+                    if(orientation_diff < max_orientation_offset):
+                        pairs.append([fn1, fn2])
+                        del model_renders[idx2]
+                        break
+                
+                num_renders = len(model_renders)
+        else:
+            pairs = [[render['filename']] for render in model_renders]
+
+        split_idx = np.ceil(train_ratio*len(pairs)).astype(int)
+        
+        train_pairs = pairs[:split_idx]
+        valid_pairs = pairs[split_idx:]
+        
+        train_filenames = [item for sublist in train_pairs for item in sublist]
+        valid_filenames = [item for sublist in valid_pairs for item in sublist]
+
+        return train_filenames, valid_filenames
+
+    def classTrainValidSplit(self, model_class, 
+                             num_models = -1,
+                             train_ratio = 1.0, 
+                             max_orientation_offset = float('inf')):
+        if(num_models < 1 or num_models > len(self.data_dict[model_class])):
+            num_models = len(self.data_dict[model_class])
+            
+        model_names = np.array(list(self.data_dict[model_class].keys()))   
+        np.random.shuffle(model_names)
+         
+        split_idx = np.ceil(train_ratio*num_models).astype(int)
+         
+        train_models = model_names[:split_idx]
+        valid_models = model_names[split_idx:num_models]
+         
+        train_filenames = []
+        for model in train_models:
+            filenames, _ = self.modelTrainValidSplit(model, max_orientation_offset=max_orientation_offset)
+            train_filenames += filenames
+         
+        valid_filenames = []
+        for model in valid_models:
+             filenames, _ = self.modelTrainValidSplit(model, max_orientation_offset=max_orientation_offset)
+             valid_filenames += filenames
+
+        return train_filenames, valid_filenames
+        
+    def globalTrainValidSplit(self, num_classes = -1, 
+                              num_models = -1,
+                              train_ratio = 1.0, 
+                              max_orientation_offset = float('inf')):
+        if(num_classes < 1 or num_classes > len(self.data_dict)):
+            num_classes = len(self.data_dict)
+        
+        class_names = np.array(list(self.data_dict.keys()))   
+        np.random.shuffle(class_names)
+         
+        split_idx = np.ceil(train_ratio*class_names).astype(int)
+         
+        train_classes = class_names[:split_idx]
+        valid_classes = class_names[split_idx:num_classes]
+         
+        train_filenames = []
+        for model_class in train_classes:
+            filenames, _ = self.classTrainValidSplit(model_class, 
+                                                     num_models=num_models, 
+                                                     max_orientation_offset=max_orientation_offset)
+            train_filenames += filenames
+         
+        valid_filenames = []
+        for model_class in valid_classes:
+            filenames, _ = self.classTrainValidSplit(model_class, 
+                                                      num_models=num_models, 
+                                                      max_orientation_offset=max_orientation_offset)
+            valid_filenames += filenames
+
+        return train_filenames, valid_filenames
+        
+
+class PoseFileDataSet(Dataset):
+    def __init__(self, render_filenames, img_size, 
+                 max_orientation_offset = None, 
+                 max_orientation_iter = 1000):
+        super(PoseFileDataSet, self).__init__()
+        self.img_size = img_size
         self.filenames = []
         self.quats = []
-        #self.eulers = []
         self.models = []
         self.model_idxs = {}
         self.euler_bins = 360
-        self.max_offset = np.pi/2
+        
+        if(max_orientation_offset is not None):
+            self.max_orientation_offset = max_orientation_offset
+        else:
+            self.max_orientation_offset = float('inf')
+            
+        self.max_orientation_iter = max_orientation_iter
         
         idx = 0;
-        files = glob.glob(self.data_dir + '/**/*.png', recursive=True)
-        for filename in files:                
-            [model_name, model, azimuth, elevation, tilt, depth] = filename.split('/')[-1].split('.')[-2].split('_')
+        
+        for filename in render_filenames:                
+            [model_class, model, azimuth, elevation, tilt, depth] = filename.split('/')[-1].split('.')[-2].split('_')
             azimuth = azimuth[1:]
             elevation = elevation[1:]
             tilt = tilt[1:]
@@ -120,51 +261,8 @@ class PoseDataLoader(Dataset):
                                     float(elevation), 
                                     float(tilt))
             self.quats.append(np.roll(q_blender,-1))
-#            self.eulers.append(np.array([float(azimuth), 
-#                               float(elevation), 
-#                               float(tilt)]))
-                               
             self.models.append(model)
-            idx += 1
-        
-#    def __init__(self, label_dir, img_size):
-#        super(PoseDataLoader, self).__init__()
-#        self.img_size = img_size
-#        self.label_dir = label_dir
-#        self.filenames = []
-#        self.quats = []
-#        self.eulers = []
-#        self.models = []
-#        self.model_idxs = {}
-#        self.euler_bins = 360
-#        
-#        idx = 0;
-#        for file in os.listdir(label_dir):            
-#            if file.endswith("_train.txt"):
-#                with open(os.path.join(label_dir, file)) as f:
-#                    model_name = file.split('.')[0]
-#                    data = f.read().split('\n')
-#                    for d in data:
-#                        if(len(d) == 0):
-#                            break
-#                        [filename, class_idx, azimuth, elevation, tilt] = d.split(' ')
-#                        model = filename.split('/')[-2]
-#                        
-#                        if(model in self.model_idxs):
-#                            self.model_idxs[model].append(idx)
-#                        else:
-#                            self.model_idxs[model] = [idx]
-#                            
-#                        self.filenames.append(filename)
-#                        self.quats.append(quat.euler2quat(float(azimuth)*np.pi/180.0, 
-#                                                          float(elevation)*np.pi/180.0, 
-#                                                          float(tilt)*np.pi/180.0))
-#                        self.euler_bins.append(np.array(float(azimuth), 
-#                                           float(elevation), 
-#                                           float(tilt)))
-#                                           
-#                        self.models.append(model)
-#                        idx += 1
+            idx += 1        
 
     def generateCluttered(self, filename, model, 
                           num_objects = 1, 
@@ -181,16 +279,10 @@ class PoseDataLoader(Dataset):
             clutter_idx = self.model_idxs[model_idx][np.random.randint(0, len(self.model_idxs[model_idx]))]
             clutter_filename = self.filenames[clutter_idx]
             clutter_img = cv2.imread(clutter_filename, cv2.IMREAD_UNCHANGED)
-            
-
-        
-        
-
 
     def __getitem__(self, index):
         origin_filename = self.filenames[index]
         origin_pose = self.quats[index]
-#        origin_euler = self.eulers[index]
 
         model = self.models[index]
         
@@ -199,7 +291,8 @@ class PoseDataLoader(Dataset):
 
         orientation_diff = float('inf')
         
-        while orientation_diff > self.max_offset:
+        orientation_iter = 0
+        while orientation_diff > self.max_orientation_offset or orientation_iter == 0:
             diff_not_found = True
             while diff_not_found:
                 #print(model, query_idx, index)
@@ -209,7 +302,6 @@ class PoseDataLoader(Dataset):
                 
             query_filename = self.filenames[query_idx]
             query_pose = self.quats[query_idx]
-    #        query_euler = self.eulers[query_idx]
             
             origin_img = cv2.imread(origin_filename)
             query_img = cv2.imread(query_filename)
@@ -230,7 +322,11 @@ class PoseDataLoader(Dataset):
                                             tf.quaternion_conjugate(origin_pose))
         
             orientation_diff = 2.0*np.arccos(d_quat[3])
-        
+            
+            orientation_iter += 1
+            if(orientation_iter > self.max_orientation_iter):
+                raise AssertionError('Orientation search exceeded max iterations {}'.format(self.max_orientation_iter))
+                
         conj_q = torch.from_numpy(tf.quaternion_conjugate(d_quat))
         angles = tf.euler_from_quaternion(d_quat)
         d_euler = np.round(np.array(angles)*self.euler_bins/(2.*np.pi))
@@ -245,3 +341,15 @@ class PoseDataLoader(Dataset):
 
     def __len__(self):
         return len(self.filenames)
+
+
+class PoseDirDataSet(PoseFileDataSet):
+    def __init__(self, data_dir, img_size, 
+                 max_orientation_offset = None, 
+                 max_orientation_iter = 1000):
+        self.data_dir = data_dir
+        render_filenames = glob.glob(self.data_dir + '/**/*.png', recursive=True)
+        super(PoseDirDataSet, self).__init__(self, render_filenames, 
+                                             img_size=img_size, 
+                                             max_orientation_offset = max_orientation_offset, 
+                                             max_orientation_iter = max_orientation_iter)
