@@ -20,6 +20,7 @@ from pose_data_loader import PoseDirDataSet, PoseFileDataSet
 from gen_pose_net import gen_pose_net, gen_pose_net_stacked
 from viewpoint_loss import ViewpointLoss, viewpointAccuracy
 from quaternion_loss import quaternionLoss
+from display_pose import makeDisplayImage
 
 torch.manual_seed(100)
 torch.cuda.manual_seed_all(100)
@@ -183,7 +184,7 @@ def train_with_dataloader(args):#, model):
 #                binned_count_elev[e_i] += 1
 #                binned_count_tilt[t_i] += 1            
             
-            if cumulative_batch_idx>0 and not(cumulative_batch_idx % args.print_loss_every_nth):
+            if not((cumulative_batch_idx+1) % args.print_loss_every_nth):
                 v_origin, v_query, v_conj_q, v_d_quat, v_d_azim, v_d_elev, v_d_tilt, v_d_euler = next(iter(valid_loader))
                 v_origin = to_var(v_origin)
                 v_query = to_var(v_query)
@@ -298,12 +299,24 @@ def train_with_dataloader(args):#, model):
                     logger.histo_summary(tag, to_np(value), cumulative_batch_idx+1)
                     logger.histo_summary(tag+'/grad', to_np(value.grad), cumulative_batch_idx+1)
         
+
+                train_disp_imgs = makeDisplayImage(to_np(origin.view(-1, 3, args.width, args.height)[:10]),
+                                                   to_np(query.view(-1, 3, args.width, args.height)[:10]),
+                                                   to_np(d_azim[:10]), to_np(d_elev[:10]), 
+                                                   to_np(d_tilt[:10]), to_np(d_quat[:10]),
+                                                   to_np(azim_est[:10]), to_np(elev_est[:10]),
+                                                   to_np(tilt_est[:10]), to_np(quat_est[:10]))
+                valid_disp_imgs = makeDisplayImage(to_np(v_origin.view(-1, 3, args.width, args.height)[:10]),
+                                                   to_np(v_query.view(-1, 3, args.width, args.height)[:10]),
+                                                   to_np(v_d_azim[:10]), to_np(v_d_elev[:10]), 
+                                                   to_np(v_d_tilt[:10]), to_np(v_d_quat[:10]),
+                                                   to_np(v_azim_est[:10]), to_np(v_elev_est[:10]),
+                                                   to_np(v_tilt_est[:10]), to_np(v_quat_est[:10]))
+        
                 # (3) Log the images
                 info = {
-                    'train_origin': to_np(origin.view(-1, 3, args.width, args.height)[:10]),
-                    'train_query': to_np(query.view(-1, 3, args.width, args.height)[:10]),                                         
-                    'valid_origin': to_np(v_origin.view(-1, 3, args.width, args.height)[:10]),
-                    'valid_query': to_np(v_query.view(-1, 3, args.width, args.height)[:10]),
+                    'train': train_disp_imgs,
+                    'valid': valid_disp_imgs,
                 }
         
                 for tag, images in info.items():
@@ -336,7 +349,7 @@ def main():
     parser.add_argument('--save_every_nth', type=int, default=500)
     parser.add_argument('--print_loss_every_nth', type=int, default=10)
     parser.add_argument('--batch_size', type=int, default=32)
-    parser.add_argument('--num_epochs', type=int, default=10000000)
+    parser.add_argument('--num_epochs', type=int, default=10000)
     parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--height', type=int, default=227)
     parser.add_argument('--width', type=int, default=227)

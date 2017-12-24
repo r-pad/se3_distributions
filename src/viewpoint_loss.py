@@ -40,9 +40,9 @@ class ViewpointLoss(nn.Module):
                 loss -= (labels[inst_id, :] * F.log_softmax(preds[inst_id, :])).sum()
 
 #        if self.mean:
-#            loss = -(labels * F.log_softmax(preds)).mean(1)
+#            loss = -(labels * F.log_softmax(preds)).mean(1).sum()
 #        else:
-#            loss = -(labels * F.log_softmax(preds)).sum(1)
+#            loss = -(labels * F.log_softmax(preds)).sum(1).sum()
 #        loss = loss.sum()
         return loss
         
