@@ -17,7 +17,7 @@ import shutil
 #import quaternions as quat
 from pose_renderer import renderView
 import transformations as tf
-from data_preprocessing import label2Probs, resizeAndPad, uniformRandomQuaternion, transparentOverlay, quat2Uniform
+from data_preprocessing import label2Probs, resizeAndPad, uniformRandomQuaternion, transparentOverlay, quat2Uniform, randomQuatNear
 
 class PoseRendererDataSet(Dataset):
     def __init__(self, model_filenames, img_size, 
@@ -146,11 +146,7 @@ class PoseRendererDataSet(Dataset):
         for fn in filenames:
             origin_quat = uniformRandomQuaternion()
             if(self.max_orientation_offset is not None):
-                offset_axis = np.random.randn(3)
-                offset_axis /= np.linalg.norm(offset_axis)
-                offset_angle = self.max_orientation_offset * np.random.rand()
-                offset_quat = tf.quaternion_about_axis(offset_angle, offset_axis)
-                query_quat = tf.quaternion_multiply(origin_quat, offset_quat)
+                query_quat, offset_quat = randomQuatNear(origin_quat, self.max_orientation_offset)
             else:
                 query_quat = uniformRandomQuaternion()
                 offset_quat = tf.quaternion_multiply(query_quat, tf.quaternion_conjugate(origin_quat))

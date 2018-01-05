@@ -8,6 +8,9 @@ Created on Tue Jan  2 22:24:09 2018
 import numpy as np
 import cv2
 
+import transformations as tf
+
+
 def calcViewlossVec(size, sigma):
     band    = np.linspace(-1*size, size, 1 + 2*size, dtype=np.int16)
     vec     = np.linspace(-1*size, size, 1 + 2*size, dtype=np.float)
@@ -103,7 +106,13 @@ def transparentOverlay(foreground, background=None, pos=(0,0),scale = 1):
     
     return background
 
-
+def randomQuatNear(init_quat, max_orientation_offset):
+    offset_axis = np.random.randn(3)
+    offset_axis /= np.linalg.norm(offset_axis)
+    offset_angle = max_orientation_offset * np.random.rand()
+    offset_quat = tf.quaternion_about_axis(offset_angle, offset_axis)
+    near_quat = tf.quaternion_multiply(init_quat, offset_quat)
+    return near_quat, offset_quat
 
 def uniformRandomQuaternion():
     u = np.random.rand(3)
