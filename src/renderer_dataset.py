@@ -122,8 +122,6 @@ class PoseRendererDataSet(Dataset):
         u_bins = torch.from_numpy(u_bins)
         return origin_img, query_img, offset_quat, offset_u0, offset_u1, offset_u2, u_bins
 
-
-
     def prerenderData(self, num_model_imgs, data_folder):
         self.data_filenames = []
         num_digits = len(str(num_model_imgs))
@@ -134,66 +132,84 @@ class PoseRendererDataSet(Dataset):
             data_filenames = []            
             for j in range(num_model_imgs):
                 data_filenames.append(os.path.join(self.data_folder, '{0}_{1}_{2:0{3}d}'.format(model_class, model, j, num_digits)))                
-            self.generateData(index, data_filenames)            
+            self.generateDataBatch(index, data_filenames)            
             
             self.data_filenames.extend(data_filenames)
+
+    def generateRotations(self):
+        origin_quat = uniformRandomQuaternion()
+        if(self.max_orientation_offset is not None):
+            query_quat, offset_quat = randomQuatNear(origin_quat, self.max_orientation_offset)
+        else:
+            query_quat = uniformRandomQuaternion()
+            offset_quat = tf.quaternion_multiply(query_quat, tf.quaternion_conjugate(origin_quat))
             
-    def generateData(self, index, filenames = [None]):
+        u = quat2Uniform(offset_quat)
+        u_bins = np.round(np.array(u)*self.class_bins/(2.*np.pi))
+        offset_u0 = label2Probs(u_bins[0], self.class_bins)
+        offset_u1 = label2Probs(u_bins[1], self.class_bins)
+        offset_u2 = label2Probs(u_bins[2], self.class_bins)
+        
+        return origin_quat, query_quat, offset_quat, offset_u0, offset_u1, offset_u2, u_bins
+ 
+    def preprocessImages(self, image):
+        num_background_files = len(self.background_filenames)
+        if(num_background_files  > 0):
+            bg_idx = np.random.randint(0, num_background_files)
+            background = cv2.imread(self.background_filenames[bg_idx])
+        else:
+            background = None
+        
+        image = transparentOverlay(image, background)
+        image = resizeAndPad(image, self.img_size)
+        
+        return image
+ 
+    def generateData(self, index):
         model_filename = self.model_filenames[index]
 
-        render_quats = []
+        origin_quat, query_quat, offset_quat, offset_u0, offset_u1, offset_u2, u_bins = self.generateRotations()
 
-        for fn in filenames:
-            origin_quat = uniformRandomQuaternion()
-            if(self.max_orientation_offset is not None):
-                query_quat, offset_quat = randomQuatNear(origin_quat, self.max_orientation_offset)
-            else:
-                query_quat = uniformRandomQuaternion()
-                offset_quat = tf.quaternion_multiply(query_quat, tf.quaternion_conjugate(origin_quat))
-                
-            u = quat2Uniform(offset_quat)
-            u_bins = np.round(np.array(u)*self.class_bins/(2.*np.pi))
-            offset_u0 = label2Probs(u_bins[0], self.class_bins)
-            offset_u1 = label2Probs(u_bins[1], self.class_bins)
-            offset_u2 = label2Probs(u_bins[2], self.class_bins)
-            
-            render_quats.append(origin_quat)
-            render_quats.append(query_quat)
-            
-            if(fn is not None):         
-                np.savez(fn + '.npz', 
-                         offset_quat = offset_quat, 
-                         offset_u0 = offset_u0, 
-                         offset_u1 = offset_u1,
-                         offset_u2 = offset_u2, 
-                         u_bins = u_bins)
+        render_quats = []        
+        render_quats.append(origin_quat)
+        render_quats.append(query_quat)
             
         # Will need to make distance random at some point
         rendered_imgs = renderView(model_filename, render_quats, self.camera_dist)
         
-        num_background_files = len(self.background_filenames)
-        for j, fn in enumerate(filenames):
-            if(num_background_files  > 0):
-                o_idx = np.random.randint(0, num_background_files)
-                q_idx = np.random.randint(0, num_background_files)
-                origin_background = cv2.imread(self.background_filenames[o_idx])
-                query_background = cv2.imread(self.background_filenames[q_idx])
-            else:
-                origin_background = None
-                query_background = None
-                
-            origin_img = transparentOverlay(rendered_imgs[2*j], origin_background)
-            query_img = transparentOverlay(rendered_imgs[2*j+1], query_background)
-    
-            origin_img = resizeAndPad(origin_img, self.img_size)
-            query_img = resizeAndPad(query_img, self.img_size)
-            
-            if(fn is not None):
-                cv2.imwrite(fn + '_origin.png', origin_img)
-                cv2.imwrite(fn + '_query.png', query_img)
+        origin_img = self.preprocessImages(rendered_imgs[0])
+        query_img = self.preprocessImages(rendered_imgs[1])
+
+        return origin_img, query_img, offset_quat, offset_u0, offset_u1, offset_u2, u_bins
+
+    def generateDataBatch(self, index, filenames):
+        model_filename = self.model_filenames[index]
+
+        render_quats = []
+        image_filenames = []
         
-        if(filenames == [None]):
-            return origin_img, query_img, offset_quat, offset_u0, offset_u1, offset_u2, u_bins
+        for data_filename in filenames:
+            image_filenames.append(data_filename + '_origin.png')
+            image_filenames.append(data_filename + '_query.png')            
+
+            data = self.generateRotations()            
+            render_quats.append(data[0])
+            render_quats.append(data[1])
+            np.savez(data_filename + '.npz', 
+                     offset_quat = data[2], 
+                     offset_u0 =  data[3], 
+                     offset_u1 =  data[4],
+                     offset_u2 =  data[5], 
+                     u_bins =  data[6])
+            
+        # Will need to make distance random at some point
+        renderView(model_filename, render_quats, self.camera_dist, filenames=image_filenames)
+        
+        for render_filename in image_filenames:
+            img = cv2.imread(render_filename, cv2.IMREAD_UNCHANGED)
+            img = self.preprocessImages(img)
+            cv2.imwrite(render_filename, img)
+
 
     def __len__(self):
         if(self.prerendered):

@@ -131,12 +131,18 @@ def objCentenedCameraPos(dist, azimuth_deg, elevation_deg):
 
 def renderView(model_file, pose_quats, camera_dist, filenames = None):
     temp_dirname = tempfile.mkdtemp()
-    pose_quats = str([q.tolist() for q in pose_quats]).replace(',','').replace('[','').replace(']','')
-    render_cmd = '{} {} --background --python {} -- --shape_file {} --pos_quats {} --camera_dist {} --image_folder {} > /dev/null 2>&1'.format(
-            blender_executable_path, blank_blend_file_path, render_code, model_file, pose_quats, camera_dist, temp_dirname)
-    
+    if(len(pose_quats) > 2):
+        quats_file = temp_dirname + '/quats.npy'
+        np.save(quats_file, pose_quats)
+        render_cmd = '{} {} --background --python {} -- --shape_file {} --quats_file {} --camera_dist {} --image_folder {} > /dev/null 2>&1'.format(
+                blender_executable_path, blank_blend_file_path, render_code, model_file, quats_file, camera_dist, temp_dirname)    
+    else:
+        pose_quats = str([q.tolist() for q in pose_quats]).replace(',','').replace('[','').replace(']','')
+        render_cmd = '{} {} --background --python {} -- --shape_file {} --pos_quats {} --camera_dist {} --image_folder {} > /dev/null 2>&1'.format(
+                blender_executable_path, blank_blend_file_path, render_code, model_file, pose_quats, camera_dist, temp_dirname) 
     try:
         os.system(render_cmd)
+
         image_filenames = sorted(glob.glob(temp_dirname+'/*.png'))
         
         rendered_imgs = []
@@ -166,7 +172,9 @@ def main():
     parser = ArgumentParser()
     
     parser.add_argument('--shape_file', type=str, required=True)
-    parser.add_argument('--pos_quats', nargs='+', type=float, required=True)
+    parser.add_argument('--pos_quats', nargs='+', type=float, default=None)
+    parser.add_argument('--quats_file', type=str, default=None)
+
     parser.add_argument('--camera_dist', type=float, required=True)
     parser.add_argument('--image_folder', type=str, default='./test_images')
     
@@ -210,10 +218,16 @@ def main():
         bpy.data.objects['Lamp'].select = True # remove default light
     bpy.ops.object.delete()
 
-    assert len(args.pos_quats)%4==0, 'pos_quats must have multiple of 4 elements, Recieved {}'.format(len(args.pos_quats))
 
-    num_quats = len(args.pos_quats)//4
-    pose_quat_list = [np.array(args.pos_quats[(4*j):(4*j+4)]) for j in range(num_quats)]
+    if(args.pos_quats is not None):
+        assert len(args.pos_quats)%4==0, 'pos_quats must have multiple of 4 elements, Recieved {}'.format(len(args.pos_quats))
+    
+        num_quats = len(args.pos_quats)//4
+        pose_quat_list = [np.array(args.pos_quats[(4*j):(4*j+4)]) for j in range(num_quats)]
+    elif(args.quats_file is not None):
+        pose_quat_list = np.load(args.quats_file)
+    else:
+        raise AssertionError('pos_quats or quats_file is required')
 
     for pose_num, pos_quat in enumerate(pose_quat_list):
         camera_mat = np.eye(4)
