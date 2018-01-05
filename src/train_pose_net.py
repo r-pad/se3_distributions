@@ -16,7 +16,7 @@ import numpy as np
 import os
 import datetime, os
 
-from pose_data_loader import PoseDirDataSet, PoseFileDataSet
+from image_dataset import PoseDirDataSet, PoseFileDataSet
 from gen_pose_net import gen_pose_net, gen_pose_net_stacked
 from viewpoint_loss import ViewpointLoss, viewpointAccuracy
 from quaternion_loss import quaternionLoss
@@ -349,7 +349,7 @@ def main():
     parser.add_argument('--save_every_nth', type=int, default=500)
     parser.add_argument('--print_loss_every_nth', type=int, default=10)
     parser.add_argument('--batch_size', type=int, default=32)
-    parser.add_argument('--num_epochs', type=int, default=10000)
+    parser.add_argument('--num_epochs', type=int, default=100000)
     parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--height', type=int, default=227)
     parser.add_argument('--width', type=int, default=227)
