@@ -243,8 +243,8 @@ def main():
     
     parser = ArgumentParser()
 
-    parser.add_argument('--train_data_file', type=str, default='/home/bokorn/src/generic_pose/generic_pose/training_sets/model_sets/cars_1_train.txt')
-    parser.add_argument('--valid_data_file', type=str, default='/home/bokorn/src/generic_pose/generic_pose/training_sets/model_sets/cars_1_valid.txt')
+    parser.add_argument('--train_data_file', type=str, default=None)
+    parser.add_argument('--valid_data_file', type=str, default=None)
     parser.add_argument('--background_data_file', type=str, default=None)
     parser.add_argument('--max_orientation_offset', type=float, default=None)
     parser.add_argument('--batch_size', type=int, default=32)
@@ -253,24 +253,31 @@ def main():
     parser.add_argument('--width', type=int, default=227)
     
     parser.add_argument('--render_live',  dest='prerender', action='store_false')
-    parser.add_argument('--num_model_imgs', type=int, default=250000)
+    parser.add_argument('--num_model_imgs', type=int, default=25000)
     parser.add_argument('--train_data_folder', type=str, default=None)
     parser.add_argument('--valid_data_folder', type=str, default=None)
     parser.add_argument('--save_renders',  dest='save_data', action='store_true')
     parser.add_argument('--random_seed', type=int, default=0)
 
 
-    parser.add_argument('--results_dir', type=str, default='/media/bokorn/ExtraDrive2/cars_1_results/') 
+    parser.add_argument('--results_dir', type=str, default='results/') 
     parser.add_argument('--num_epochs', type=int, default=100000)
     parser.add_argument('--log_every_nth', type=int, default=10)
 
     args = parser.parse_args()
 
-    with open(args.train_data_file, 'r') as f:    
-        train_filenames = f.read().split()
-    with open(args.valid_data_file, 'r') as f:    
-        valid_filenames = f.read().split()    
-
+    if(args.train_data_file is not None):
+        with open(args.train_data_file, 'r') as f:    
+            train_filenames = f.read().split()
+    else:
+        train_filenames = None
+    
+    if(args.valid_data_file is not None):
+        with open(args.valid_data_file, 'r') as f:    
+            valid_filenames = f.read().split()    
+    else:
+        valid_filenames = None
+        
     if(args.background_data_file is not None):
         with open(args.background_data_file, 'r') as f:    
             background_filenames = f.read().split()
@@ -285,10 +292,10 @@ def main():
                           background_filenames = background_filenames,
                           max_orientation_offset = args.max_orientation_offset,
                           prerender = args.prerender,
-                          num_model_imgs = 250000, #args.num_model_imgs,
-                          train_data_folder = '/media/bokorn/ExtraDrive4/cars_1_renders/train_renders', #args.data_folder,
-                          valid_data_folder = '/media/bokorn/ExtraDrive4/cars_1_renders/valid_renders', #args.valid_data_folder,
-                          save_data = True, #args.save_data and args.prerender,
+                          num_model_imgs = args.num_model_imgs,
+                          train_data_folder = args.train_data_folder,
+                          valid_data_folder = args.valid_data_folder,
+                          save_data = args.save_data and args.prerender,
                           seed = args.random_seed)
 
 
