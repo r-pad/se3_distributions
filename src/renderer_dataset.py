@@ -14,7 +14,6 @@ import tempfile
 import os
 import shutil
 
-#import quaternions as quat
 from pose_renderer import renderView
 import transformations as tf
 from data_preprocessing import label2Probs, resizeAndPad, uniformRandomQuaternion, transparentOverlay, quat2Uniform, randomQuatNear
@@ -64,10 +63,13 @@ class PoseRendererDataSet(Dataset):
             self.prerendered = True
             self.save_data = True
             files = glob.glob(self.data_folder + '/**/*.npz', recursive=True)
-
+            
+            self.data_filenames = []
             for filename in files:
-                self.data_filenames.append(filename.split('.')[:-1])
-                
+                self.data_filenames.append('.'.join(filename.split('.')[:-1]))
+            
+            if(num_model_imgs < len(self.data_filenames)):
+                self.data_filenames = self.data_filenames[:num_model_imgs]
         else:
             raise AssertionError('Both model_filenames and data_folder cannot be None')
 
@@ -88,19 +90,6 @@ class PoseRendererDataSet(Dataset):
             query_img = resizeAndPad(query_img, self.img_size)
             
             npzfile = np.load(self.data_filenames[index] + '.npz')
-#            print('*'*10)
-#            print(type(npzfile['offset_quat']))
-#            print(npzfile['offset_quat'])
-#            print('-'*10)
-#            print(type(npzfile['offset_u0']))
-#            print(npzfile['offset_u0'])
-#            print('*'*10)
-#            offset_quat = torch.from_numpy(npzfile['offset_quat'])
-#            offset_u0 = torch.from_numpy(npzfile['offset_u0'])
-#            offset_u1 = torch.from_numpy(npzfile['offset_u1'])
-#            offset_u2 = torch.from_numpy(npzfile['offset_u2'])
-#            u_bins = torch.from_numpy(npzfile['u_bins'])
-#            
             offset_quat = npzfile['offset_quat']
             offset_u0 = npzfile['offset_u0']
             offset_u1 = npzfile['offset_u1']
@@ -131,7 +120,7 @@ class PoseRendererDataSet(Dataset):
 
             data_filenames = []            
             for j in range(num_model_imgs):
-                data_filenames.append(os.path.join(self.data_folder, '{0}_{1}_{2:0{3}d}'.format(model_class, model, j, num_digits)))                
+                data_filenames.append(os.path.join(self.data_folder, '{0}_{1}_{2:0{3}d}'.format(model_class, model, j, num_digits)))
             self.generateDataBatch(index, data_filenames)            
             
             self.data_filenames.extend(data_filenames)
@@ -145,7 +134,7 @@ class PoseRendererDataSet(Dataset):
             offset_quat = tf.quaternion_multiply(query_quat, tf.quaternion_conjugate(origin_quat))
             
         u = quat2Uniform(offset_quat)
-        u_bins = np.round(np.array(u)*self.class_bins/(2.*np.pi))
+        u_bins = np.round(np.array(u)*self.class_bins)
         offset_u0 = label2Probs(u_bins[0], self.class_bins)
         offset_u1 = label2Probs(u_bins[1], self.class_bins)
         offset_u2 = label2Probs(u_bins[2], self.class_bins)

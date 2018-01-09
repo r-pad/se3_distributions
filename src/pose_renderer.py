@@ -131,15 +131,34 @@ def objCentenedCameraPos(dist, azimuth_deg, elevation_deg):
 
 def renderView(model_file, pose_quats, camera_dist, filenames = None):
     temp_dirname = tempfile.mkdtemp()
+
+    assert filenames is None or len(pose_quats) == len(filenames), 'filenames must be None or same size as pose_quats, Expected {}, Got {}'.format(len(pose_quats), len(filenames))
+
+    if(filenames is None):
+        image_filenames = []
+        if(type(pose_quats) == np.ndarray):
+            num_quats = pose_quats.shape[0]
+        else:
+            num_quats = len(pose_quats)
+
+        num_digits = len(str(num_quats))
+        for j in range(num_quats):
+            image_filenames.append(os.path.join(temp_dirname, '{0:0{1}d}.png'.format(j,num_digits)))
+    
+    path_file = temp_dirname + '/paths.txt'
+    with open(path_file, 'w') as f:
+        for filename in image_filenames:
+            f.write('{}\n'.format(filename))
+
     if(len(pose_quats) > 2):
         quats_file = temp_dirname + '/quats.npy'
         np.save(quats_file, pose_quats)
-        render_cmd = '{} {} --background --python {} -- --shape_file {} --quats_file {} --camera_dist {} --image_folder {} > /dev/null 2>&1'.format(
-                blender_executable_path, blank_blend_file_path, render_code, model_file, quats_file, camera_dist, temp_dirname)    
+        render_cmd = '{} {} --background --python {} -- --shape_file {} --quats_file {} --camera_dist {} --path_file {} > /dev/null 2>&1'.format(
+                blender_executable_path, blank_blend_file_path, render_code, model_file, quats_file, camera_dist, path_file)    
     else:
         pose_quats = str([q.tolist() for q in pose_quats]).replace(',','').replace('[','').replace(']','')
-        render_cmd = '{} {} --background --python {} -- --shape_file {} --pos_quats {} --camera_dist {} --image_folder {} > /dev/null 2>&1'.format(
-                blender_executable_path, blank_blend_file_path, render_code, model_file, pose_quats, camera_dist, temp_dirname) 
+        render_cmd = '{} {} --background --python {} -- --shape_file {} --pos_quats {} --camera_dist {} --path_file {} > /dev/null 2>&1'.format(
+                blender_executable_path, blank_blend_file_path, render_code, model_file, pose_quats, camera_dist, path_file) 
     try:
         os.system(render_cmd)
 
@@ -151,12 +170,7 @@ def renderView(model_file, pose_quats, camera_dist, filenames = None):
             for render_filename in image_filenames:
                 img = cv2.imread(render_filename, cv2.IMREAD_UNCHANGED)
                 rendered_imgs.append(img)
-        elif(len(image_filenames) == len(filenames)):
-            for render_filename, save_filename  in zip(image_filenames, filenames):
-                shutil.move(render_filename, save_filename)
-        else:
-            raise AssertionError('filenames must be None or same size as pose_quats, Expected {}, Got {}'.format(len(image_filenames), len(filenames)))
-
+                
         shutil.rmtree(temp_dirname)
         
     except Exception as e:
@@ -176,7 +190,7 @@ def main():
     parser.add_argument('--quats_file', type=str, default=None)
 
     parser.add_argument('--camera_dist', type=float, required=True)
-    parser.add_argument('--image_folder', type=str, default='./test_images')
+    parser.add_argument('--path_file', type=str, default=None)
     
     parser.add_argument('--light_num_lower', type=int, default=1)
     parser.add_argument('--light_num_upper', type=int, default=6)
@@ -188,16 +202,15 @@ def main():
     parser.add_argument('--light_elevation_upper', type=float, default=90)
     parser.add_argument('--light_energy_mean', type=float, default=2)
     parser.add_argument('--light_energy_std', type=float, default=2)
-    parser.add_argument('--light_environment_energy_lower', type=float, default=0)
+    parser.add_argument('--light_environment_energy_lower', type=float, default=0.5)
     parser.add_argument('--light_environment_energy_upper', type=float, default=1)
 
     args = parser.parse_args(sys.argv[6:])
 
     import bpy
     # Input parameters
-    if args.image_folder is not None and not os.path.exists(args.image_folder):
-        os.mkdir(args.image_folder)
 
+    bpy.context.scene.cycles.device = 'GPU'
     bpy.ops.import_scene.obj(filepath=args.shape_file) 
     
     bpy.context.scene.render.alpha_mode = 'TRANSPARENT'
@@ -229,7 +242,17 @@ def main():
     else:
         raise AssertionError('pos_quats or quats_file is required')
 
-    for pose_num, pos_quat in enumerate(pose_quat_list):
+    if args.path_file is None: 
+        image_filenames = []
+        num_quats = pose_quat_list.shape[0]
+        num_digits = len(str(num_quats))
+        for j in range(num_quats):
+            image_filenames.append('{0:0{1}d}.png'.format(j,num_digits))
+    else:
+        with open(args.path_file, 'r') as f:
+            image_filenames = f.read().split() 
+            
+    for pose_num, (pos_quat, filename) in enumerate(zip(pose_quat_list, image_filenames)):
         camera_mat = np.eye(4)
         camera_mat[0,3] = args.camera_dist
         view_mat = tf.quaternion_matrix(tf.quaternion_inverse(pos_quat)).dot(camera_mat)
@@ -277,8 +300,7 @@ def main():
         camObj.rotation_quaternion[2] = cam_quat[2]
         camObj.rotation_quaternion[3] = cam_quat[3]
 
-        syn_image_file = '{}.png'.format(pose_num)
-        bpy.data.scenes['Scene'].render.filepath = os.path.join(args.image_folder, syn_image_file)
+        bpy.data.scenes['Scene'].render.filepath = filename
         bpy.ops.render.render( write_still=True )
 
 if __name__=='__main__':

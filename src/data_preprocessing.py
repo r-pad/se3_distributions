@@ -7,6 +7,7 @@ Created on Tue Jan  2 22:24:09 2018
 
 import numpy as np
 import cv2
+import scipy.interpolate as interpolate
 
 import transformations as tf
 
@@ -18,6 +19,28 @@ def calcViewlossVec(size, sigma):
     prob    = prob / np.sum(prob)
 
     return band, prob
+
+def generateDistWeights(num_bins = 360):
+    w_r1 = np.sqrt(1 - np.linspace(0, 1, num_bins, endpoint=False)) # + 0.5/num_bins)
+    w_r1 = np.sqrt(np.linspace(0, 1, num_bins, endpoint=False)) # + 0.5/num_bins)
+    w_theta1 = np.zeros(num_bins)
+    w_theta1 = np.zeros((num_bins,num_bins))
+
+#def label2ProbsUniform(u, num_bins = 360, band_width = 7, sigma=5):
+#    # Calculate object multiplier
+#    u_idxs = u.astype(int)
+#    
+#    
+#    label = np.zeros(num_bins, dtype=np.float)
+#    for 
+#        # calculate probabilities
+#        band, prob = calcViewlossVec(band_width, sigma)
+#    
+#        for i in band:
+#            ind = np.mod(true_idx + i + num_bins, num_bins)
+#            label[ind] = prob[i + band_width]
+#
+#    return labels
 
 def label2Probs(angle, angle_bins = 360, band_width = 7, sigma=5):
     '''
@@ -106,16 +129,24 @@ def transparentOverlay(foreground, background=None, pos=(0,0),scale = 1):
     
     return background
 
+# inverse transform sampling proportional to sin2(theta)
+_x = np.linspace(0, np.pi, 256)
+_cdf_sin2 = 1/2 * (_x - np.cos(_x)*np.sin(_x))
+_cdf_sin2 /= _cdf_sin2[-1]
+_inv_cdf = interpolate.interp1d(_cdf_sin2, _x)
+
 def randomQuatNear(init_quat, max_orientation_offset):
     offset_axis = np.random.randn(3)
     offset_axis /= np.linalg.norm(offset_axis)
-    offset_angle = max_orientation_offset * np.random.rand()
+    norm_const = 1/2 * (max_orientation_offset - np.cos(max_orientation_offset)*np.sin(max_orientation_offset))
+    offset_angle = _inv_cdf(norm_const * np.random.rand())
     offset_quat = tf.quaternion_about_axis(offset_angle, offset_axis)
     near_quat = tf.quaternion_multiply(init_quat, offset_quat)
     return near_quat, offset_quat
 
 def uniformRandomQuaternion():
-    u = np.random.rand(3)
+    # Range is [0:1, -0.5:0.5, -.25,.25]
+    u = np.random.rand(3)*[1.0,1.0,0.5]  
     return uniform2Quat(u)
 
 def uniform2Quat(u):
@@ -123,10 +154,15 @@ def uniform2Quat(u):
     r2 = np.sqrt(u[0])
     theta1 = 2.0*np.pi*u[1]
     theta2 = 2.0*np.pi*u[2]
-    return np.array([r1*np.sin(theta1), r1*np.cos(theta1), r2*np.sin(theta2), r2*np.cos(theta2)])
+    q = np.array([r1*np.sin(theta1), r1*np.cos(theta1), r2*np.sin(theta2), r2*np.cos(theta2)])
+    if(q[-1] < 0):
+        q *= -1 
+    return q
 
 def quat2Uniform(q):
     u1 = (q[2]**2 + q[3]**2)
     u2 = np.arctan2(q[0],q[1])/(2.0*np.pi)
     u3 = np.arctan2(q[2],q[3])/(2.0*np.pi)
+    # current hach because u3 is half as large when angle is always pos
+    u3*=2
     return np.array([u1, u2, u3])
