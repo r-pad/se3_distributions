@@ -41,45 +41,41 @@ model_urls = {
 
 class GenPoseNet(nn.Module):
 
-    def __init__(self):
+    def __init__(self, classification_output_dims=(360,360,360)):
         super(GenPoseNet, self).__init__()
-        self.features_euler = nn.Sequential(
-            nn.Conv2d(3, 96, kernel_size=11, stride=4, padding=2), #conv1
-            nn.ReLU(inplace=True),                                 #relu1
-            nn.MaxPool2d(kernel_size=3, stride=2),                 #pool1
-            #LRN(local_size=5, alpha=0.0001, beta=0.75),            #norm1
-            nn.Conv2d(96, 256, kernel_size=5, padding=2),          #conv2
-            nn.ReLU(inplace=True),                                 #relu2
-            nn.MaxPool2d(kernel_size=3, stride=2),                 #pool2
-            #LRN(local_size=5, alpha=0.0001, beta=0.75),            #norm2
-            nn.Conv2d(256, 384, kernel_size=3, padding=1),         #conv3
-            nn.ReLU(inplace=True),                                 #relu3
-            nn.Conv2d(384, 384, kernel_size=3, padding=1),         #conv4
-            nn.ReLU(inplace=True),                                 #relu4
-            nn.Conv2d(384, 256, kernel_size=3, padding=1),         #conv5
-            nn.ReLU(inplace=True),                                 #relu5
-            nn.MaxPool2d(kernel_size=3, stride=2),                 #pool5
+        self.features_classification = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+            nn.Conv2d(64, 192, kernel_size=5, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+            nn.Conv2d(192, 384, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(384, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
         )
 
-        self.features_quat = nn.Sequential(
-            nn.Conv2d(3, 96, kernel_size=11, stride=4, padding=2), #conv1
-            nn.ReLU(inplace=True),                                 #relu1
-            nn.MaxPool2d(kernel_size=3, stride=2),                 #pool1
-            #LRN(local_size=5, alpha=0.0001, beta=0.75),            #norm1
-            nn.Conv2d(96, 256, kernel_size=5, padding=2),          #conv2
-            nn.ReLU(inplace=True),                                 #relu2
-            nn.MaxPool2d(kernel_size=3, stride=2),                 #pool2
-            #LRN(local_size=5, alpha=0.0001, beta=0.75),            #norm2
-            nn.Conv2d(256, 384, kernel_size=3, padding=1),         #conv3
-            nn.ReLU(inplace=True),                                 #relu3
-            nn.Conv2d(384, 384, kernel_size=3, padding=1),         #conv4
-            nn.ReLU(inplace=True),                                 #relu4
-            nn.Conv2d(384, 256, kernel_size=3, padding=1),         #conv5
-            nn.ReLU(inplace=True),                                 #relu5
-            nn.MaxPool2d(kernel_size=3, stride=2),                 #pool5
+        self.features_regression = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+            nn.Conv2d(64, 192, kernel_size=5, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+            nn.Conv2d(192, 384, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(384, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
         )
 
-        self.euler_linear = nn.Sequential(
+        self.compare_classification = nn.Sequential(
             nn.Dropout(),
             nn.Linear(256 * 6 * 6 * 2, 4096),
             nn.ReLU(inplace=True),
@@ -88,11 +84,11 @@ class GenPoseNet(nn.Module):
             nn.ReLU(inplace=True),
         )
 
-        self.azimuth_linear = nn.Linear(4096, 360)
-        self.elevation_linear = nn.Linear(4096, 360)
-        self.tilt_linear = nn.Linear(4096, 360)
+        self.dim0_linear = nn.Linear(4096, classification_output_dims[0])
+        self.dim1_linear = nn.Linear(4096, classification_output_dims[1])
+        self.dim2_linear = nn.Linear(4096, classification_output_dims[2])
         
-        self.quaternion_linear = nn.Sequential(
+        self.compare_regression = nn.Sequential(
             nn.Dropout(),
             nn.Linear(256 * 6 * 6 * 2, 4096),
             nn.ReLU(inplace=True),
@@ -102,117 +98,31 @@ class GenPoseNet(nn.Module):
             nn.Linear(4096, 4),
         )
 
-    def forward_quat(self, origin, query):
-        origin = self.features_quat(origin)
-        query = self.features_quat(query)
+    def forward_regression(self, origin, query):
+        origin = self.features_regression(origin)
+        query = self.features_regression(query)        
         origin = origin.view(origin.size(0), 256 * 6 * 6)
         query = query.view(query.size(0), 256 * 6 * 6)        
-
-        x = self.quaternion_linear(torch.cat((origin, query), dim=1))
+        x = self.compare_regression(torch.cat((origin, query), dim=1))
         return x
         
-    def forward_euler(self, origin, query):
-        origin = self.features_euler(origin)
-        query = self.features_euler(query)
+    def forward_classification(self, origin, query):
+        origin = self.features_classification(origin)
+        query = self.features_classification(query)
         origin = origin.view(origin.size(0), 256 * 6 * 6)
         query = query.view(query.size(0), 256 * 6 * 6)        
         
-        x = self.euler_linear(torch.cat((origin, query), dim=1))
+        x = self.compare_classification(torch.cat((origin, query), dim=1))
 
-        azimuth = self.azimuth_linear(x)
-        elevation = self.elevation_linear(x)
-        tilt = self.tilt_linear(x)
-        return azimuth, elevation, tilt
-
-    def forward(self, origin, query):
-        quat = self.forward_quat(origin, query)
-        azimuth, elevation, tilt = self.forward_euler(origin, query)
-        return quat, azimuth, elevation, tilt
-
-class GenPoseNetStacked(nn.Module):
-
-    def __init__(self):
-        super(GenPoseNet, self).__init__()
-        self.features_euler = nn.Sequential(
-            nn.Conv2d(6, 192, kernel_size=11, stride=4, padding=2), #conv1
-            nn.ReLU(inplace=True),                                 #relu1
-            nn.MaxPool2d(kernel_size=3, stride=2),                 #pool1
-            #LRN(local_size=5, alpha=0.0001, beta=0.75),            #norm1
-            nn.Conv2d(192, 512, kernel_size=5, padding=2),          #conv2
-            nn.ReLU(inplace=True),                                 #relu2
-            nn.MaxPool2d(kernel_size=3, stride=2),                 #pool2
-            #LRN(local_size=5, alpha=0.0001, beta=0.75),            #norm2
-            nn.Conv2d(512, 768, kernel_size=3, padding=1),         #conv3
-            nn.ReLU(inplace=True),                                 #relu3
-            nn.Conv2d(768, 768, kernel_size=3, padding=1),         #conv4
-            nn.ReLU(inplace=True),                                 #relu4
-            nn.Conv2d(768, 512, kernel_size=3, padding=1),         #conv5
-            nn.ReLU(inplace=True),                                 #relu5
-            nn.MaxPool2d(kernel_size=3, stride=2),                 #pool5
-        )
-
-        self.features_quat = nn.Sequential(
-            nn.Conv2d(6, 96, kernel_size=11, stride=4, padding=2), #conv1
-            nn.ReLU(inplace=True),                                 #relu1
-            nn.MaxPool2d(kernel_size=3, stride=2),                 #pool1
-            #LRN(local_size=5, alpha=0.0001, beta=0.75),            #norm1
-            nn.Conv2d(96, 512, kernel_size=5, padding=2),          #conv2
-            nn.ReLU(inplace=True),                                 #relu2
-            nn.MaxPool2d(kernel_size=3, stride=2),                 #pool2
-            #LRN(local_size=5, alpha=0.0001, beta=0.75),            #norm2
-            nn.Conv2d(512, 768, kernel_size=3, padding=1),         #conv3
-            nn.ReLU(inplace=True),                                 #relu3
-            nn.Conv2d(768, 768, kernel_size=3, padding=1),         #conv4
-            nn.ReLU(inplace=True),                                 #relu4
-            nn.Conv2d(768, 512, kernel_size=3, padding=1),         #conv5
-            nn.ReLU(inplace=True),                                 #relu5
-            nn.MaxPool2d(kernel_size=3, stride=2),                 #pool5
-        )
-
-        self.euler_linear = nn.Sequential(
-            nn.Dropout(),
-            nn.Linear(512 * 6 * 6 * 2, 4096),
-            nn.ReLU(inplace=True),
-            nn.Dropout(),
-            nn.Linear(4096, 4096),
-            nn.ReLU(inplace=True),
-        )
-
-        self.azimuth_linear = nn.Linear(4096, 360)
-        self.elevation_linear = nn.Linear(4096, 360)
-        self.tilt_linear = nn.Linear(4096, 360)
-        
-        self.quaternion_linear = nn.Sequential(
-            nn.Dropout(),
-            nn.Linear(512 * 6 * 6 * 2, 4096),
-            nn.ReLU(inplace=True),
-            nn.Dropout(),
-            nn.Linear(4096, 4096),
-            nn.ReLU(inplace=True),
-            nn.Linear(4096, 4),
-        )
-
-    def forward_quat(self, origin, query):
-        features = self.features_euler(torch.cat((origin, query), dim=1))
-        features = features.view(features.size(0), 256 * 6 * 6)
-        x = self.quaternion_linear(torch.cat((origin, query), dim=1))
-        return x
-        
-    def forward_euler(self, origin, query):
-        features = self.features_quat(torch.cat((origin, query), dim=1))
-        features = features.view(features.size(0), 256 * 6 * 6)        
-        x = self.euler_linear(features)
-
-        azimuth = self.azimuth_linear(x)
-        elevation = self.elevation_linear(x)
-        tilt = self.tilt_linear(x)
-        return azimuth, elevation, tilt
+        dim0 = self.dim0_linear(x)
+        dim1 = self.dim1_linear(x)
+        dim2 = self.dim2_linear(x)
+        return dim0, dim1, dim2
 
     def forward(self, origin, query):
-        quat = self.forward_quat(origin, query)
-        azimuth, elevation, tilt = self.forward_euler(origin, query)
-        return quat, azimuth, elevation, tilt
-
+        quat = self.forward_regression(origin, query)
+        dim0, dim1, dim2 = self.forward_classification(origin, query)
+        return quat, dim0, dim1, dim2
 
 def gen_pose_net(pretrained=False, **kwargs):
     r"""AlexNet model architecture from the
@@ -224,19 +134,17 @@ def gen_pose_net(pretrained=False, **kwargs):
     if pretrained:
         pretrained_dict = model_zoo.load_url(model_urls['alexnet'])
         model_dict = model.state_dict()
-        pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
-        model_dict.update(pretrained_dict) 
+        update_dict = {}
+        for k, v in pretrained_dict.items():
+            k_classification = str(k).replace('features', 'features_classification')
+            if k_classification in model_dict:
+                update_dict[k_classification] = v
+                
+            k_regression = str(k).replace('features', 'features_regression')
+            if k_regression in model_dict:
+                update_dict[k_regression] = v
+            
+        model_dict.update(update_dict) 
         model.load_state_dict(model_dict)
-        
-    return model
-    
-    
-def gen_pose_net_stacked(pretrained=False, **kwargs):
-    r"""AlexNet model architecture from the
-    `"One weird trick..." <https://arxiv.org/abs/1404.5997>`_ paper.
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
-    model = GenPoseNet(**kwargs)
         
     return model
