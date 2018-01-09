@@ -37,11 +37,16 @@ def makeDisplayImage(origin_imgs, query_imgs,
         est_axis = est_q[:3]/np.sin(est_angle/2.0)       
         display_string_true = 'True Angle: {:.3f}, True Axis: {}'.format(true_angle*180/np.pi, true_axis)
         display_string_est  = 'Est Angle:  {:.3f}, Est Axis:  {}'.format(est_angle*180/np.pi, est_axis)
+
         cv2.putText(disp_imgs[j], display_string_true, (10, disp_h-40),
-                    cv2.FONT_HERSHEY_SIMPLEX, .5, (1.0,1.0,1.0), 1)
+                    cv2.FONT_HERSHEY_SIMPLEX, .5, (1.0,1.0,1.0), 2)
         cv2.putText(disp_imgs[j], display_string_est, (10, disp_h-20),
-                    cv2.FONT_HERSHEY_SIMPLEX, .5, (1.0,1.0,1.0), 1)     
-        
+                    cv2.FONT_HERSHEY_SIMPLEX, .5, (1.0,1.0,1.0), 2)
+        cv2.putText(disp_imgs[j], display_string_true, (10, disp_h-40),
+                    cv2.FONT_HERSHEY_SIMPLEX, .5, (0.0,0.0,0.0), 1)
+        cv2.putText(disp_imgs[j], display_string_est, (10, disp_h-20),
+                    cv2.FONT_HERSHEY_SIMPLEX, .5, (0.0,0.0,0.0), 1)
+
         disp_col = disp_h + text_height
         for k, v in enumerate([true_azims[j], est_azims[j], true_elevs[j], est_elevs[j], true_tilts[j], est_tilts[j]]):
             if(k%2 == 1):
