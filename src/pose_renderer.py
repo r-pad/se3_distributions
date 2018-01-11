@@ -144,7 +144,9 @@ def renderView(model_file, pose_quats, camera_dist, filenames = None):
         num_digits = len(str(num_quats))
         for j in range(num_quats):
             image_filenames.append(os.path.join(temp_dirname, '{0:0{1}d}.png'.format(j,num_digits)))
-    
+    else:
+        image_filenames = filenames
+        
     path_file = temp_dirname + '/paths.txt'
     with open(path_file, 'w') as f:
         for filename in image_filenames:
