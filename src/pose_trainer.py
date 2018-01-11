@@ -96,6 +96,15 @@ class PoseTrainer(object):
 
         loss_quat = quaternionLoss(quat_est, quat_true)
         
+#        max0 = torch.max(u0_true, 1)[1]
+#        max1 = torch.max(u1_true, 1)[1]
+#        max2 = torch.max(u2_true, 1)[1]
+#        crit = torch.nn.CrossEntropyLoss()
+#
+#        loss_u0 = crit(u0_est, max0)
+#        loss_u1 = crit(u1_est, max1)
+#        loss_u2 = crit(u2_est, max2)        
+        
         loss_u0 = self.class_loss(u0_est, u0_true)
         loss_u1 = self.class_loss(u1_est, u1_true)
         loss_u2 = self.class_loss(u2_est, u2_true)
@@ -111,6 +120,14 @@ class PoseTrainer(object):
         err_u1 = viewpointAccuracy(u1_est, u1_true)
         err_u2 = viewpointAccuracy(u2_est, u2_true)
         
+        f_origin = model.features_classification(origin)
+        f_origin = f_origin.view(f_origin.size(0), 256 * 6 * 6)        
+        f_sum_origin = torch.sum(torch.abs(f_origin[0]))
+        
+        f_query = model.features_classification(query)
+        f_query = f_query.view(f_query.size(0), 256 * 6 * 6)        
+        f_sum_query = torch.sum(torch.abs(f_query[0]))
+        
         results = {'quat_est':quat_est, 
                    'u0_est':u0_est,
                    'u1_est':u1_est, 
@@ -122,7 +139,9 @@ class PoseTrainer(object):
                    'loss_binned':loss_binned, 
                    'err_u0':err_u0, 
                    'err_u1':err_u1, 
-                   'err_u2':err_u2}        
+                   'err_u2':err_u2,
+                   'f_sum_origin':f_sum_origin,
+                   'f_sum_query':f_sum_query}        
         
         return results
     
@@ -131,7 +150,7 @@ class PoseTrainer(object):
               log_every_nth = 10):
         model.train()
         model.cuda()
-        self.optimizer = Adadelta(model.parameters())
+        self.optimizer = Adam(model.parameters())
  
 
         if not os.path.exists(results_dir):
@@ -189,6 +208,10 @@ class PoseTrainer(object):
                         'valid_err_u0': valid_results['err_u0'],
                         'valid_err_u1': valid_results['err_u1'],
                         'valid_err_u2': valid_results['err_u2'],
+                        'train_f_sum_origin': train_results['f_sum_origin'].data[0],
+                        'train_f_sum_query': train_results['f_sum_query'].data[0],
+                        'valid_f_sum_origin': valid_results['f_sum_origin'].data[0],
+                        'valid_f_sum_query': valid_results['f_sum_query'].data[0],
                     }
             
                     for tag, value in info.items():
