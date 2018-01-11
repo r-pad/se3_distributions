@@ -9,6 +9,8 @@ import numpy as np
 #import os
 import torch
 from torch.utils.data import Dataset
+import torchvision.transforms as transforms
+
 import glob
 import tempfile
 import os
@@ -45,6 +47,10 @@ class PoseRendererDataSet(Dataset):
         
         self.max_orientation_offset = max_orientation_offset
         
+        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                              std=[0.229, 0.224, 0.225])
+        self.to_tensor = transforms.ToTensor()
+
         if(model_filenames is not None):
             for idx, filename in enumerate(model_filenames):
                 [model_class, model, model_file] = filename.split('/')[-3:]
@@ -99,16 +105,15 @@ class PoseRendererDataSet(Dataset):
         else:
             origin_img, query_img, offset_quat, offset_u0, offset_u1, offset_u2, u_bins = self.generateData(index)
 
-        origin_img = origin_img.astype('float32')
-        query_img = query_img.astype('float32')
-        origin_img = np.rollaxis(origin_img, 2)
-        query_img = np.rollaxis(query_img, 2)
-
+        origin_img = self.normalize(self.to_tensor(origin_img))
+        query_img  = self.normalize(self.to_tensor(query_img))
+        
         offset_quat = torch.from_numpy(offset_quat)
         offset_u0 = torch.from_numpy(offset_u0)
         offset_u1 = torch.from_numpy(offset_u1)
         offset_u2 = torch.from_numpy(offset_u2)
         u_bins = torch.from_numpy(u_bins)
+                                      
         return origin_img, query_img, offset_quat, offset_u0, offset_u1, offset_u2, u_bins
 
     def prerenderData(self, num_model_imgs, data_folder):

@@ -16,9 +16,15 @@ def get_colors(inp, colormap, vmin=None, vmax=None):
 def makeDisplayImage(origin_imgs, query_imgs, 
                      true_azims, true_elevs, true_tilts, true_quats,
                      est_azims, est_elevs, est_tilts, est_quats,
-                     bin_height = 10, text_height = 0):
-    origin_imgs = np.transpose(origin_imgs, (0,2,3,1))/255.0
-    query_imgs = np.transpose(query_imgs, (0,2,3,1))/255.0
+                     bin_height = 10, text_height = 0,
+                     norm_mean = np.array([0.485, 0.456, 0.406]),
+                     norm_std = np.array([0.229, 0.224, 0.225])):
+
+    origin_imgs = np.transpose(origin_imgs, (0,2,3,1))
+    query_imgs = np.transpose(query_imgs, (0,2,3,1))
+    origin_imgs = np.minimum(np.maximum(origin_imgs*norm_std + norm_mean, 0.0), 1.0)
+    query_imgs = np.minimum(np.maximum(query_imgs*norm_std + norm_mean, 0.0), 1.0)
+    
     n, h, w, c = origin_imgs.shape
     disp_w = 2*true_azims.shape[-1]
     disp_h = (h*disp_w)//(2*w)
