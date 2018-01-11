@@ -43,6 +43,46 @@ class GenPoseNet(nn.Module):
 
     def __init__(self, classification_output_dims=(360,360,360)):
         super(GenPoseNet, self).__init__()
+#        self.features_classification = nn.Sequential(
+#            nn.Conv2d(3, 96, kernel_size=11, stride=4, padding=2), #conv1
+#            nn.ReLU(inplace=True),                                 #relu1
+#            nn.MaxPool2d(kernel_size=3, stride=2),                 #pool1
+#            #LRN(local_size=5, alpha=0.0001, beta=0.75),            #norm1
+#            nn.Conv2d(96, 256, kernel_size=5, padding=2),          #conv2
+#            nn.ReLU(inplace=True),                                 #relu2
+#            nn.MaxPool2d(kernel_size=3, stride=2),                 #pool2
+#            #LRN(local_size=5, alpha=0.0001, beta=0.75),            #norm2
+#            nn.Conv2d(256, 384, kernel_size=3, padding=1),         #conv3
+#            nn.ReLU(inplace=True),                                 #relu3
+#            nn.Conv2d(384, 384, kernel_size=3, padding=1),         #conv4
+#            nn.ReLU(inplace=True),                                 #relu4
+#            nn.Conv2d(384, 256, kernel_size=3, padding=1),         #conv5
+#            nn.ReLU(inplace=True),                                 #relu5
+#            nn.MaxPool2d(kernel_size=3, stride=2),                 #pool5
+#        )
+#
+#        self.features_regression = nn.Sequential(
+#            nn.Conv2d(3, 96, kernel_size=11, stride=4, padding=2), #conv1
+#            nn.ReLU(inplace=True),                                 #relu1
+#            nn.MaxPool2d(kernel_size=3, stride=2),                 #pool1
+#            #LRN(local_size=5, alpha=0.0001, beta=0.75),            #norm1
+#            nn.Conv2d(96, 256, kernel_size=5, padding=2),          #conv2
+#            nn.ReLU(inplace=True),                                 #relu2
+#            nn.MaxPool2d(kernel_size=3, stride=2),                 #pool2
+#            #LRN(local_size=5, alpha=0.0001, beta=0.75),            #norm2
+#            nn.Conv2d(256, 384, kernel_size=3, padding=1),         #conv3
+#            nn.ReLU(inplace=True),                                 #relu3
+#            nn.Conv2d(384, 384, kernel_size=3, padding=1),         #conv4
+#            nn.ReLU(inplace=True),                                 #relu4
+#            nn.Conv2d(384, 256, kernel_size=3, padding=1),         #conv5
+#            nn.ReLU(inplace=True),                                 #relu5
+#            nn.MaxPool2d(kernel_size=3, stride=2),                 #pool5
+#        )
+
+        ##############################################
+        ############## ORIGINAL ALEXNET ##############
+        ##############################################
+        
         self.features_classification = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=2),
             nn.ReLU(inplace=True),
@@ -58,7 +98,6 @@ class GenPoseNet(nn.Module):
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=3, stride=2),
         )
-
         self.features_regression = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=2),
             nn.ReLU(inplace=True),
@@ -100,17 +139,18 @@ class GenPoseNet(nn.Module):
 
     def forward_regression(self, origin, query):
         origin = self.features_regression(origin)
-        query = self.features_regression(query)        
+        query  = self.features_regression(query)
         origin = origin.view(origin.size(0), 256 * 6 * 6)
-        query = query.view(query.size(0), 256 * 6 * 6)        
+        query  = query.view(query.size(0), 256 * 6 * 6)        
+
         x = self.compare_regression(torch.cat((origin, query), dim=1))
         return x
         
     def forward_classification(self, origin, query):
         origin = self.features_classification(origin)
-        query = self.features_classification(query)
+        query  = self.features_classification(query)
         origin = origin.view(origin.size(0), 256 * 6 * 6)
-        query = query.view(query.size(0), 256 * 6 * 6)        
+        query  = query.view(query.size(0), 256 * 6 * 6)        
         
         x = self.compare_classification(torch.cat((origin, query), dim=1))
 
@@ -132,19 +172,22 @@ def gen_pose_net(pretrained=False, **kwargs):
     """
     model = GenPoseNet(**kwargs)
     if pretrained:
-        pretrained_dict = model_zoo.load_url(model_urls['alexnet'])
+        
         model_dict = model.state_dict()
+
+        pretrained_dict = model_zoo.load_url(model_urls['alexnet'])
         update_dict = {}
+
         for k, v in pretrained_dict.items():
             k_classification = str(k).replace('features', 'features_classification')
             if k_classification in model_dict:
                 update_dict[k_classification] = v
-                
             k_regression = str(k).replace('features', 'features_regression')
             if k_regression in model_dict:
                 update_dict[k_regression] = v
-            
+                
         model_dict.update(update_dict) 
+
         model.load_state_dict(model_dict)
         
     return model
