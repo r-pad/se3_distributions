@@ -72,7 +72,7 @@ class GenPoseNet(nn.Module):
     def compareClassification(self, origin_features, query_features):
         if(self.compare_classification is None):
             raise AssertionError('Classification comparison network not set.')
-        x = self.compare_classification(torch.cat((query_features, query_features), dim=1))
+        x = self.compare_classification(torch.cat((origin_features, query_features), dim=1))
         dim0 = self.dim0_linear(x)
         dim1 = self.dim1_linear(x)
         dim2 = self.dim2_linear(x)
@@ -93,7 +93,7 @@ class GenPoseNet(nn.Module):
     def compareRegression(self, origin_features, query_features):
         if(self.compare_regression is None):
             raise AssertionError('Regression comparison network not set.')
-        x = self.compare_regression(torch.cat((query_features, query_features), dim=1))
+        x = self.compare_regression(torch.cat((origin_features, query_features), dim=1))
         return x
 
     def forward(self, origin, query):
