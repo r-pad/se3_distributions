@@ -85,15 +85,8 @@ class PoseRendererDataSet(Dataset):
             
     def __getitem__(self, index):
         if(self.prerendered):
-            origin_img = cv2.imread(self.data_filenames[index] + '_origin.png')
-            query_img = cv2.imread(self.data_filenames[index] + '_query.png')
-            
-            if (len(origin_img.shape) == 2):
-                origin_img = np.expand_dims(origin_img, axis=2)
-                query_img = np.expand_dims(query_img, axis=2)
-        
-            origin_img = resizeAndPad(origin_img, self.img_size)
-            query_img = resizeAndPad(query_img, self.img_size)
+            origin_img = cv2.imread(self.data_filenames[index] + '_origin.png', cv2.IMREAD_UNCHANGED)
+            query_img = cv2.imread(self.data_filenames[index] + '_query.png', cv2.IMREAD_UNCHANGED)
             
             npzfile = np.load(self.data_filenames[index] + '.npz')
             offset_quat = npzfile['offset_quat']
@@ -104,6 +97,9 @@ class PoseRendererDataSet(Dataset):
             
         else:
             origin_img, query_img, offset_quat, offset_u0, offset_u1, offset_u2, u_bins = self.generateData(index)
+
+        origin_img = self.preprocessImages(origin_img)
+        query_img = self.preprocessImages(query_img)        
 
         origin_img = self.normalize(self.to_tensor(origin_img))
         query_img  = self.normalize(self.to_tensor(query_img))
@@ -153,8 +149,13 @@ class PoseRendererDataSet(Dataset):
             background = cv2.imread(self.background_filenames[bg_idx])
         else:
             background = None
+
+        if (len(image.shape) == 2):
+            image = np.expand_dims(image, axis=2)
         
-        image = transparentOverlay(image, background)
+        if(image.shape[2] == 4):
+            image = transparentOverlay(image, background)
+            
         image = resizeAndPad(image, self.img_size)
         
         return image
@@ -198,12 +199,6 @@ class PoseRendererDataSet(Dataset):
             
         # Will need to make distance random at some point
         renderView(model_filename, render_quats, self.camera_dist, filenames=image_filenames)
-        
-        for render_filename in image_filenames:
-            img = cv2.imread(render_filename, cv2.IMREAD_UNCHANGED)
-            img = self.preprocessImages(img)
-            cv2.imwrite(render_filename, img)
-
 
     def __len__(self):
         if(self.prerendered):

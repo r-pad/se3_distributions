@@ -8,6 +8,7 @@ Created on Thu Jan  4 00:27:44 2018
 from logger import Logger
 
 import torch
+import numpy as np
 
 import torch.optim as optim
 from torch.autograd import Variable
@@ -89,68 +90,70 @@ class PoseTrainer(object):
         u1_true = to_var(u1_true)
         u2_true = to_var(u2_true)
 
+        results = {}
+
         if(backward):
             self.optimizer.zero_grad()
             
-        quat_est, u0_est, u1_est, u2_est = model.forward(origin, query)
+        if(model.features_regression is not None):
+            origin_features_regression = model.featuresRegression(origin)
+            query_features_regression = model.featuresRegression(query)
+            quat_est = model.compareRegression(origin_features_regression, 
+                                               query_features_regression)
 
-        loss_quat = quaternionLoss(quat_est, quat_true)
-        
-#        max0 = torch.max(u0_true, 1)[1]
-#        max1 = torch.max(u1_true, 1)[1]
-#        max2 = torch.max(u2_true, 1)[1]
-#        crit = torch.nn.CrossEntropyLoss()
-#
-#        loss_u0 = crit(u0_est, max0)
-#        loss_u1 = crit(u1_est, max1)
-#        loss_u2 = crit(u2_est, max2)        
-        
-        loss_u0 = self.class_loss(u0_est, u0_true)
-        loss_u1 = self.class_loss(u1_est, u1_true)
-        loss_u2 = self.class_loss(u2_est, u2_true)
-        loss_binned = loss_u0 + loss_u1 + loss_u2
+            loss_quat = quaternionLoss(quat_est, quat_true)
+            if(backward):
+                loss_quat.backward(retain_graph=True)
 
+            results['quat_est'] = quat_est
+            results['loss_quat'] = loss_quat.data[0]
+            results['mean_origin_features_regression'] = np.mean(np.abs(to_np(origin_features_regression)))
+            results['mean_query_features_regression'] = np.mean(np.abs(to_np(query_features_regression)))
+
+        if(model.features_classification is not None):
+            origin_features_classification = model.featuresClassification(origin)
+            query_features_classification = model.featuresClassification(query)
+            u0_est, u1_est, u2_est = model.compareClassification(origin_features_classification,
+                                                                 query_features_classification)
+             
+            loss_u0 = self.class_loss(u0_est, u0_true)
+            loss_u1 = self.class_loss(u1_est, u1_true)
+            loss_u2 = self.class_loss(u2_est, u2_true)
+            loss_binned = loss_u0 + loss_u1 + loss_u2
+        
+            err_u0 = viewpointAccuracy(u0_est, u0_true)
+            err_u1 = viewpointAccuracy(u1_est, u1_true)
+            err_u2 = viewpointAccuracy(u2_est, u2_true)
+
+            if(backward):
+                loss_binned.backward()
+        
+            results['u0_est'] = u0_est
+            results['u1_est'] = u1_est
+            results['u2_est'] = u2_est
+            results['loss_u0'] = loss_u0.data[0]
+            results['loss_u1'] = loss_u1.data[0]
+            results['loss_u2'] = loss_u2.data[0]
+            results['loss_binned'] = loss_binned.data[0]
+            results['err_u0'] = err_u0
+            results['err_u1'] = err_u1
+            results['err_u2'] = err_u2
+
+            results['mean_origin_features_classification'] = np.mean(np.abs(to_np(origin_features_classification)))
+            results['mean_query_features_classification'] = np.mean(np.abs(to_np(query_features_classification)))        
+        
         if(backward):
-            loss_quat.backward(retain_graph=True)
-            loss_binned.backward()
-        
             self.optimizer.step()
 
-        err_u0 = viewpointAccuracy(u0_est, u0_true)
-        err_u1 = viewpointAccuracy(u1_est, u1_true)
-        err_u2 = viewpointAccuracy(u2_est, u2_true)
-        
-        f_origin = model.features_classification(origin)
-        f_origin = f_origin.view(f_origin.size(0), 256 * 6 * 6)        
-        f_sum_origin = torch.sum(torch.abs(f_origin[0]))
-        
-        f_query = model.features_classification(query)
-        f_query = f_query.view(f_query.size(0), 256 * 6 * 6)        
-        f_sum_query = torch.sum(torch.abs(f_query[0]))
-        
-        results = {'quat_est':quat_est, 
-                   'u0_est':u0_est,
-                   'u1_est':u1_est, 
-                   'u2_est':u2_est,
-                   'loss_quat':loss_quat, 
-                   'loss_u0':loss_u0, 
-                   'loss_u1':loss_u1, 
-                   'loss_u2':loss_u2, 
-                   'loss_binned':loss_binned, 
-                   'err_u0':err_u0, 
-                   'err_u1':err_u1, 
-                   'err_u2':err_u2,
-                   'f_sum_origin':f_sum_origin,
-                   'f_sum_query':f_sum_query}        
-        
         return results
     
     def train(self, model, results_dir, 
               num_epochs = 100000,
-              log_every_nth = 10):
+              log_every_nth = 10,
+              lr = 1e-5):
         model.train()
         model.cuda()
-        self.optimizer = Adam(model.parameters())
+        self.optimizer = Adam(model.parameters(), lr=lr)
  
 
         if not os.path.exists(results_dir):
@@ -190,30 +193,17 @@ class PoseTrainer(object):
                                                        backward=False)
                     
                     print("epoch {} :: cumulative_batch_idx {}".format(epoch_idx, cumulative_batch_idx + 1))
+                    
+                    info = {}
+                    
+                    for k,v in train_results.items():
+                        if('est' not in k):
+                            info['train_' + k] = v
 
-                    info = {
-                        'train_loss_quat': train_results['loss_quat'].data[0],
-                        'train_loss_u0': train_results['loss_u0'].data[0],
-                        'train_loss_u1': train_results['loss_u1'].data[0],
-                        'train_loss_u2': train_results['loss_u2'].data[0],
-                        'train_loss_binned': train_results['loss_binned'].data[0],
-                        'train_err_u0': train_results['err_u0'],
-                        'train_err_u1': train_results['err_u1'],
-                        'train_err_u2': train_results['err_u2'],
-                        'valid_loss_quat': valid_results['loss_quat'].data[0],
-                        'valid_loss_u0': valid_results['loss_u0'].data[0],
-                        'valid_loss_u1': valid_results['loss_u1'].data[0],
-                        'valid_loss_u2': valid_results['loss_u2'].data[0],
-                        'valid_loss_binned': valid_results['loss_binned'].data[0],
-                        'valid_err_u0': valid_results['err_u0'],
-                        'valid_err_u1': valid_results['err_u1'],
-                        'valid_err_u2': valid_results['err_u2'],
-                        'train_f_sum_origin': train_results['f_sum_origin'].data[0],
-                        'train_f_sum_query': train_results['f_sum_query'].data[0],
-                        'valid_f_sum_origin': valid_results['f_sum_origin'].data[0],
-                        'valid_f_sum_query': valid_results['f_sum_query'].data[0],
-                    }
-            
+                    for k,v in valid_results.items():
+                        if('est' not in k):
+                            info['valid_' + k] = v
+                            
                     for tag, value in info.items():
                         logger.scalar_summary(tag, value, cumulative_batch_idx+1)
             
@@ -222,18 +212,45 @@ class PoseTrainer(object):
                         logger.histo_summary(tag, to_np(value), cumulative_batch_idx+1)
                         logger.histo_summary(tag+'/grad', to_np(value.grad), cumulative_batch_idx+1)
             
+                    if('quat_est' in train_results):
+                        train_quat_est = to_np(train_results['quat_est'][:10])
+                    else:
+                        train_quat_est = None
+                    
+                    if('u0_est' in train_results):
+                        train_u0_est = to_np(train_results['u0_est'][:10])
+                        train_u1_est = to_np(train_results['u1_est'][:10])
+                        train_u2_est = to_np(train_results['u2_est'][:10])
+                    else:
+                        train_u0_est = None
+                        train_u1_est = None
+                        train_u2_est = None
+                        
                     train_disp_imgs = makeDisplayImage(to_np(origin.view(-1, 3, self.img_size[0], self.img_size[1])[:10]),
                                                        to_np(query.view(-1, 3, self.img_size[0], self.img_size[1])[:10]),
                                                        to_np(u0_true[:10]), to_np(u1_true[:10]), 
                                                        to_np(u2_true[:10]), to_np(quat_true[:10]),
-                                                       to_np(train_results['u0_est'][:10]), to_np(train_results['u1_est'][:10]),
-                                                       to_np(train_results['u2_est'][:10]), to_np(train_results['quat_est'][:10]))
+                                                       train_u0_est, train_u1_est, train_u2_est, train_quat_est)
+
+                    if('quat_est' in valid_results):
+                        valid_quat_est = to_np(valid_results['quat_est'][:10])
+                    else:
+                        valid_quat_est = None
+                    
+                    if('u0_est' in valid_results):
+                        valid_u0_est = to_np(valid_results['u0_est'][:10])
+                        valid_u1_est = to_np(valid_results['u1_est'][:10])
+                        valid_u2_est = to_np(valid_results['u2_est'][:10])
+                    else:
+                        valid_u0_est = None
+                        valid_u1_est = None
+                        valid_u2_est = None
+                    
                     valid_disp_imgs = makeDisplayImage(to_np(v_origin.view(-1, 3, self.img_size[0], self.img_size[1])[:10]),
                                                        to_np(v_query.view(-1, 3, self.img_size[0], self.img_size[1])[:10]),
                                                        to_np(v_u0_true[:10]), to_np(v_u1_true[:10]), 
                                                        to_np(v_u2_true[:10]), to_np(v_quat_true[:10]),
-                                                       to_np(valid_results['u0_est'][:10]), to_np(valid_results['u1_est'][:10]),
-                                                       to_np(valid_results['u2_est'][:10]), to_np(valid_results['quat_est'][:10]))
+                                                       valid_u0_est, valid_u1_est, valid_u2_est, valid_quat_est)
             
                     info = {
                         'train': train_disp_imgs,
@@ -243,26 +260,30 @@ class PoseTrainer(object):
                     for tag, images in info.items():
                         logger.image_summary(tag, images, cumulative_batch_idx+1)
                     
-                    if(valid_results['loss_quat'].data[0] < min_loss_quat or valid_results['loss_binned'].data[0] < min_loss_binned):
+                    if(('loss_quat' in valid_results and valid_results['loss_quat'] < min_loss_quat) \
+                        or ('loss_binned' in valid_results and valid_results['loss_binned'] < min_loss_binned)):
 
-                        min_loss_quat = min(min_loss_quat, valid_results['loss_quat'].data[0])
-                        min_loss_binned = min(min_loss_binned, valid_results['loss_binned'].data[0])
+                        min_loss_quat = min(min_loss_quat, valid_results.setdefault('loss_quat', -float('inf')))
+                        min_loss_binned = min(min_loss_binned, valid_results.setdefault('loss_binned', -float('inf')))
 
                         weights_filename = os.path.join(weights_dir, 'epoch_{0:0{4}d}_batch_{1:0{5}d}_lquat_{2:.4f}_lbinned_{3:.4f}.pth'.\
                                               format(epoch_idx, cumulative_batch_idx + 1, 
-                                              valid_results['loss_quat'].data[0], 
-                                              valid_results['loss_binned'].data[0],
+                                              valid_results['loss_quat'], 
+                                              valid_results['loss_binned'],
                                               epoch_digits, batch_digits))
                                                                            
                         print("saving model ", weights_filename)
                         torch.save(model.state_dict(), weights_filename)
+                        
 
+                    weights_filename = os.path.join(weights_dir, 'latest.pth')
+                    torch.save(model.state_dict(), weights_filename)
                 cumulative_batch_idx += 1
 
 def main():
     import datetime
     from argparse import ArgumentParser
-    from gen_pose_net import gen_pose_net
+    from gen_pose_net import gen_pose_net_alexnet, gen_pose_net_vgg16, gen_pose_net_resnet101, gen_pose_net_resnet50
     
     parser = ArgumentParser()
 
@@ -274,6 +295,13 @@ def main():
     parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--height', type=int, default=227)
     parser.add_argument('--width', type=int, default=227)
+    
+    parser.add_argument('--lr', type=float, default=1e-5)
+    
+    parser.add_argument('--model_type', type=str, default='resnet101')
+    parser.add_argument('--train_classification', dest='classification', action='store_true')
+    parser.add_argument('--train_regression', dest='regression', action='store_true')
+    parser.add_argument('--random_init', dest='pretrained', action='store_false')    
     
     parser.add_argument('--render_live',  dest='prerender', action='store_false')
     parser.add_argument('--num_model_imgs', type=int, default=25000)
@@ -325,11 +353,25 @@ def main():
     current_timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     results_dir = os.path.join(args.results_dir,current_timestamp)    
     
-    model = gen_pose_net(pretrained=True)    
-    
+    if(args.model_type == 'alexnet'):
+        model = gen_pose_net_alexnet(pretrained=args.pretrained)
+    elif(args.model_type == 'vgg'):
+        model = gen_pose_net_vgg16(pretrained=args.pretrained)
+    elif(args.model_type == 'resnet101'):
+        model = gen_pose_net_resnet101(classification = args.classification, 
+                                       regression = args.regression, 
+                                       pretrained=args.pretrained)
+    elif(args.model_type == 'resnet50'):
+        model = gen_pose_net_resnet50(classification = args.classification, 
+                                      regression = args.regression, 
+                                      pretrained=args.pretrained)
+    else:
+        raise AssertionError('Model type {} not supported, alexnet, vgg and resnet are only valid types'.format(args.model_type))
+        
     trainer.train(model, results_dir, 
                   num_epochs = args.num_epochs,
-                  log_every_nth = args.log_every_nth)
+                  log_every_nth = args.log_every_nth,
+                  lr = args.lr)
 
 if __name__=='__main__':
     main()
