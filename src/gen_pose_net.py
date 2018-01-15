@@ -101,6 +101,9 @@ class GenPoseNet(nn.Module):
         dim0, dim1, dim2 = self.forwardClassification(origin, query)
         return quat, dim0, dim1, dim2
 
+
+
+
 def AlexnetFeatures():
     features = nn.Sequential(
         nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=2),
@@ -118,121 +121,6 @@ def AlexnetFeatures():
         nn.MaxPool2d(kernel_size=3, stride=2),
         )
     return features
-    
-def VGG16Features(batch_norm=True):
-    features = vgg.make_layers(vgg.cfg['D'], batch_norm=batch_norm)
-    return features
-    
-#
-#def _resnet_make_layer(block, planes, blocks, inplanes, stride=1):
-#    downsample = None
-#    if stride != 1 or inplanes != planes * block.expansion:
-#        downsample = nn.Sequential(
-#            nn.Conv2d(inplanes, planes * block.expansion,
-#                      kernel_size=1, stride=stride, bias=False),
-#            nn.BatchNorm2d(planes * block.expansion),
-#        )
-#
-#    layers = []
-#    layers.append(block(inplanes, planes, stride, downsample))
-#    inplanes = planes * block.expansion
-#    for i in range(1, blocks):
-#        layers.append(block(inplanes, planes))
-#
-#    return nn.Sequential(*layers), inplanes
-#
-#def ResNetFeatures(block, layers):
-#    inplanes = 64
-#    
-#    conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
-#                           bias=False)
-#    bn1 = nn.BatchNorm2d(64)
-#    relu = nn.ReLU(inplace=True)
-#    maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-#    layer1, inplanes = _resnet_make_layer(block, 64, layers[0], inplanes=inplanes)
-#    layer2, inplanes = _resnet_make_layer(block, 128, layers[1], inplanes=inplanes, stride=2)
-#    layer3, inplanes = _resnet_make_layer(block, 256, layers[2], inplanes=inplanes, stride=2)
-#    layer4, inplanes = _resnet_make_layer(block, 512, layers[3], inplanes=inplanes, stride=2)
-#    avgpool = nn.AvgPool2d(7, stride=1)
-#
-#    features = nn.Sequential(
-#        conv1,
-#        bn1,
-#        relu,
-#        maxpool,
-#        layer1,
-#        layer2,
-#        layer3,
-#        layer4,
-#        avgpool,
-#    )
-#
-#    for m in features.modules():
-#        if isinstance(m, nn.Conv2d):
-#            n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-#            m.weight.data.normal_(0, math.sqrt(2. / n))
-#        elif isinstance(m, nn.BatchNorm2d):
-#            m.weight.data.fill_(1)
-#            m.bias.data.zero_()
-#
-#    return features
-#    
-
-class ResNetFeatures(nn.Module):
-
-    def __init__(self, block, layers):
-        self.inplanes = 64
-        super(ResNetFeatures, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
-                               bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.relu = nn.ReLU(inplace=True)
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.layer1 = self._make_layer(block, 64, layers[0])
-        self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
-        self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
-        self.avgpool = nn.AvgPool2d(7, stride=1)
-
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-            elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
-
-    def _make_layer(self, block, planes, blocks, stride=1):
-        downsample = None
-        if stride != 1 or self.inplanes != planes * block.expansion:
-            downsample = nn.Sequential(
-                nn.Conv2d(self.inplanes, planes * block.expansion,
-                          kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(planes * block.expansion),
-            )
-
-        layers = []
-        layers.append(block(self.inplanes, planes, stride, downsample))
-        self.inplanes = planes * block.expansion
-        for i in range(1, blocks):
-            layers.append(block(self.inplanes, planes))
-
-        return nn.Sequential(*layers)
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = self.maxpool(x)
-
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-
-        x = self.avgpool(x)
-
-        return x
         
 def gen_pose_net_alexnet(pretrained=False, **kwargs):
     """AlexNet model architecture from the
@@ -267,35 +155,29 @@ def gen_pose_net_alexnet(pretrained=False, **kwargs):
     return model
     
     
-def gen_pose_net_vgg16(pretrained=False, batch_norm=True, **kwargs):
+def gen_pose_net_vgg16(classification = True, regression = True, pretrained=False, batch_norm=True, **kwargs):
     """VGG16 mopdel archetecture
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
-    features_classification = VGG16Features(batch_norm)
-    features_regression = VGG16Features(batch_norm)
-    feature_size = 512 * 7 * 7
-    model = GenPoseNet(features_classification, feature_size, 
-                       features_regression, feature_size, **kwargs)
-    
-    if pretrained:        
-        model_dict = model.state_dict()
-
-        pretrained_dict = model_zoo.load_url(vgg.model_urls['vgg16'])
-        update_dict = {}
-
-        for k, v in pretrained_dict.items():
-            k_classification = str(k).replace('features', 'features_classification')
-            if k_classification in model_dict:
-                update_dict[k_classification] = v
-            k_regression = str(k).replace('features', 'features_regression')
-            if k_regression in model_dict:
-                update_dict[k_regression] = v
-                
-        model_dict.update(update_dict) 
-
-        model.load_state_dict(model_dict)
+    if(classification):
+        vgg16_classification = vgg.vgg16_bn(pretrained=pretrained)
+        features_classification = vgg16_classification.features
+        features_classification_size = 512 * 7 * 7
+    else:
+        features_classification = None
+        features_classification_size = 0
         
+    if(regression):
+        vgg16_regression = vgg.vgg16_bn(pretrained=pretrained)
+        features_regression = vgg16_regression.features
+        features_regression_size = 512 * 7 * 7
+    else:
+        features_regression = None
+        features_regression_size = 0
+        
+    model = GenPoseNet(features_classification, features_classification_size,
+                       features_regression, features_regression_size, **kwargs)
     return model
     
 def gen_pose_net_resnet101(classification = True, regression = True, pretrained=False, **kwargs):

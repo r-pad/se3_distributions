@@ -26,21 +26,30 @@ def generateDistWeights(num_bins = 360):
     w_theta1 = np.zeros(num_bins)
     w_theta1 = np.zeros((num_bins,num_bins))
 
-#def label2ProbsUniform(u, num_bins = 360, band_width = 7, sigma=5):
-#    # Calculate object multiplier
-#    u_idxs = u.astype(int)
-#    
-#    
-#    label = np.zeros(num_bins, dtype=np.float)
-#    for 
-#        # calculate probabilities
-#        band, prob = calcViewlossVec(band_width, sigma)
-#    
-#        for i in band:
-#            ind = np.mod(true_idx + i + num_bins, num_bins)
-#            label[ind] = prob[i + band_width]
-#
-#    return labels
+def label2DenseWeights(u, num_bins = (100, 100, 100), sigma=5):
+    # Calculate object multiplier
+    u_idxs = (u*np.array(num_bins)).astype(int)
+    u0_space = np.linspace(0,1,num_bins[0], endpoint=False) + .5/num_bins[0]
+    u1_space = np.linspace(0,1,num_bins[1], endpoint=False) + .5/num_bins[1]
+    u2_space = np.linspace(0,1,num_bins[2], endpoint=False) + .5/num_bins[2]
+    
+    u0 = u0_space[u_idxs[0]];
+    r1 = np.expand_dims(np.sqrt(1-u0_space), axis=1)
+    r2 = np.expand_dims(np.sqrt(u0_space), axis=1)
+
+    w_theta1 = np.expand_dims(np.cos(2*np.pi*(u1_space - .5/num_bins[1])), axis=1)
+    w_theta2 = np.expand_dims(np.cos(2*np.pi*(u2_space - .5/num_bins[2])), axis=1)
+    
+    rho1 = np.sqrt(1-u0);
+    rho2 = np.sqrt(u0);
+    gamma1 = np.roll(w_theta1, u_idxs[1]);
+    gamma2 = np.roll(w_theta2, u_idxs[2]);
+    
+    w1 = np.expand_dims(rho1*gamma1.T*r1, axis=0)
+    w2 = np.expand_dims(rho2*r2.T*gamma2, axis=2)
+    w = np.exp(-(w1 + w2) / sigma).transpose([1,2,0])
+
+    return w
 
 def label2Probs(angle, angle_bins = 360, band_width = 7, sigma=5):
     '''

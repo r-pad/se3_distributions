@@ -293,18 +293,19 @@ def main():
     parser.add_argument('--max_orientation_offset', type=float, default=None)
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--num_workers', type=int, default=4)
-    parser.add_argument('--height', type=int, default=227)
-    parser.add_argument('--width', type=int, default=227)
+    parser.add_argument('--height', type=int, default=224)
+    parser.add_argument('--width', type=int, default=224)
     
     parser.add_argument('--lr', type=float, default=1e-5)
     
     parser.add_argument('--model_type', type=str, default='resnet101')
     parser.add_argument('--train_classification', dest='classification', action='store_true')
+    parser.add_argument('--dense_classification', dest='dense_classification', action='store_true')
     parser.add_argument('--train_regression', dest='regression', action='store_true')
     parser.add_argument('--random_init', dest='pretrained', action='store_false')    
     
     parser.add_argument('--render_live',  dest='prerender', action='store_false')
-    parser.add_argument('--num_model_imgs', type=int, default=25000)
+    parser.add_argument('--num_model_imgs', type=int, default=250000)
     parser.add_argument('--train_data_folder', type=str, default=None)
     parser.add_argument('--valid_data_folder', type=str, default=None)
     parser.add_argument('--save_renders',  dest='save_data', action='store_true')
@@ -316,6 +317,8 @@ def main():
     parser.add_argument('--log_every_nth', type=int, default=10)
 
     args = parser.parse_args()
+
+    args.classification = args.classification or args.dense_classification
 
     if(args.train_data_file is not None):
         with open(args.train_data_file, 'r') as f:    
@@ -356,7 +359,9 @@ def main():
     if(args.model_type == 'alexnet'):
         model = gen_pose_net_alexnet(pretrained=args.pretrained)
     elif(args.model_type == 'vgg'):
-        model = gen_pose_net_vgg16(pretrained=args.pretrained)
+        model = gen_pose_net_vgg16(classification = args.classification, 
+                                   regression = args.regression, 
+                                   pretrained=args.pretrained)
     elif(args.model_type == 'resnet101'):
         model = gen_pose_net_resnet101(classification = args.classification, 
                                        regression = args.regression, 
