@@ -199,7 +199,7 @@ def gen_pose_net_resnet101(classification = True, regression = True, pretrained=
         resnet_regression = resnet.resnet101(pretrained=pretrained)
         lst_regression = [elem for elem in resnet_regression.children()]
         features_regression = torch.nn.Sequential(*lst_regression[:-1])
-        features_regression_size = lst_classification[-1].in_features
+        features_regression_size = lst_regression[-1].in_features
     else:
         features_regression = None
         features_regression_size = 0
@@ -228,7 +228,7 @@ def gen_pose_net_resnet50(classification = True, regression = True, pretrained=F
         resnet_regression = resnet.resnet50(pretrained=pretrained)
         lst_regression = [elem for elem in resnet_regression.children()]
         features_regression = torch.nn.Sequential(*lst_regression[:-1])
-        features_regression_size = lst_classification[-1].in_features
+        features_regression_size = lst_regression[-1].in_features
     else:
         features_regression = None
         features_regression_size = 0
