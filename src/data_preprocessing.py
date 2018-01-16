@@ -20,12 +20,6 @@ def calcViewlossVec(size, sigma):
 
     return band, prob
 
-def generateDistWeights(num_bins = 360):
-    w_r1 = np.sqrt(1 - np.linspace(0, 1, num_bins, endpoint=False)) # + 0.5/num_bins)
-    w_r1 = np.sqrt(np.linspace(0, 1, num_bins, endpoint=False)) # + 0.5/num_bins)
-    w_theta1 = np.zeros(num_bins)
-    w_theta1 = np.zeros((num_bins,num_bins))
-
 def label2DenseWeights(u, num_bins = (100, 100, 100), sigma=5):
     # Calculate object multiplier
     u_idxs = (u*np.array(num_bins)).astype(int)
@@ -140,7 +134,7 @@ def transparentOverlay(foreground, background=None, pos=(0,0),scale = 1):
 
 # inverse transform sampling proportional to sin2(theta)
 _x = np.linspace(0, np.pi, 256)
-_cdf_sin2 = 1/2 * (_x - np.cos(_x)*np.sin(_x))
+_cdf_sin2 = 1./2. * (_x - np.cos(_x)*np.sin(_x))
 _cdf_sin2 /= _cdf_sin2[-1]
 _inv_cdf = interpolate.interp1d(_cdf_sin2, _x)
 
@@ -173,5 +167,5 @@ def quat2Uniform(q):
     u2 = np.arctan2(q[0],q[1])/(2.0*np.pi)
     u3 = np.arctan2(q[2],q[3])/(2.0*np.pi)
     # current hach because u3 is half as large when angle is always pos
-    u3*=2
+    #u3*=2
     return np.array([u1, u2, u3])
