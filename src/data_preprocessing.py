@@ -20,30 +20,32 @@ def calcViewlossVec(size, sigma):
 
     return band, prob
 
-def label2DenseWeights(u, num_bins = (100, 100, 100), sigma=5):
-    # Calculate object multiplier
-    u_idxs = (u*np.array(num_bins)).astype(int)
-    u0_space = np.linspace(0,1,num_bins[0], endpoint=False) + .5/num_bins[0]
-    u1_space = np.linspace(0,1,num_bins[1], endpoint=False) + .5/num_bins[1]
-    u2_space = np.linspace(0,1,num_bins[2], endpoint=False) + .5/num_bins[2]
+def label2DenseWeights(u, num_bins = (100, 100, 50), sigma=5):
+    # Calculate distance based weights
+    num_bins_full = num_bins[:2] + (2*num_bins[2],)
+    u_idxs = np.floor(u*np.array(num_bins_full)).astype(int)
+    u0_space = np.linspace(0,1,num_bins_full[0], endpoint=False) + .5/num_bins_full[0]
+    u1_space = np.linspace(0,1,num_bins_full[1], endpoint=False) + .5/num_bins_full[1]
+    u2_space = np.linspace(0,1,num_bins_full[2], endpoint=False) + .5/num_bins_full[2]
     
     u0 = u0_space[u_idxs[0]];
     r1 = np.expand_dims(np.sqrt(1-u0_space), axis=1)
     r2 = np.expand_dims(np.sqrt(u0_space), axis=1)
 
-    w_theta1 = np.expand_dims(np.cos(2*np.pi*(u1_space - .5/num_bins[1])), axis=1)
-    w_theta2 = np.expand_dims(np.cos(2*np.pi*(u2_space - .5/num_bins[2])), axis=1)
+    w_theta1 = np.expand_dims(np.cos(2*np.pi*(u1_space - .5/num_bins_full[1])), axis=1)
+    w_theta2 = np.expand_dims(np.cos(2*np.pi*(u2_space - .5/num_bins_full[2])), axis=1)
     
     rho1 = np.sqrt(1-u0);
     rho2 = np.sqrt(u0);
     gamma1 = np.roll(w_theta1, u_idxs[1]);
     gamma2 = np.roll(w_theta2, u_idxs[2]);
+    gamma2 = np.concatenate((gamma2[:int(np.floor(num_bins_full[2]/4.))], gamma2[-int(np.ceil(num_bins_full[2]/4.)):]))
     
     w1 = np.expand_dims(rho1*gamma1.T*r1, axis=0)
     w2 = np.expand_dims(rho2*r2.T*gamma2, axis=2)
-    w = np.exp(-(w1 + w2) / sigma).transpose([1,2,0])
+    w = np.exp((np.abs(w1 + w2)-1) / sigma).transpose([1,2,0])
 
-    return w
+    return w.flatten()
 
 def label2Probs(angle, angle_bins = 360, band_width = 7, sigma=5):
     '''
@@ -169,3 +171,20 @@ def quat2Uniform(q):
     # current hach because u3 is half as large when angle is always pos
     #u3*=2
     return np.array([u1, u2, u3])
+    
+def quatDiff(q1, q2):
+    return tf.quaternion_multiply(q1, tf.quaternion_conjugate(q2))
+    
+def quatAngularDiff(q1, q2):
+    q_diff = quatDiff(q1, q2)
+    return quat2AxisAngle(q_diff)[1]
+    
+def quat2AxisAngle(q):
+    if(q[-1] < 0):
+        q *= -1 
+    angle = 2*np.arccos(q[3])
+    axis = q[:3]/np.sin(angle/2.0)
+    return axis, angle
+
+
+    

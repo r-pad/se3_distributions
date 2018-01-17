@@ -13,14 +13,18 @@ import torchvision.models.vgg as vgg
 import torchvision.models.alexnet as alexnet
 import torchvision.models.resnet as resnet
 
+model_urls = {
+    'alexnet': 'https://download.pytorch.org/models/alexnet-owt-4df8aa71.pth',
+}
+
 class GenPoseNetDense(nn.Module):
 
     def __init__(self, 
                  features_classification, features_classification_size, 
                  features_regression=None, features_regression_size=0, 
-                 classification_output_dims=(100,100,100)):
+                 classification_output_dims=(50,50,25)):
         super(GenPoseNetDense, self).__init__()
-        
+        self.classification_output_dims = classification_output_dims
         self.features_classification = features_classification
         
         self.features_regression = features_regression
@@ -33,7 +37,7 @@ class GenPoseNetDense(nn.Module):
                 nn.Dropout(),
                 nn.Linear(4096, 4096),
                 nn.ReLU(inplace=True),
-                nn.Linear(4096, np.prod(classification_output_dims))
+                nn.Linear(4096, int(np.prod(classification_output_dims)))
             )    
         else:
             self.compare_classification = None
@@ -59,7 +63,7 @@ class GenPoseNetDense(nn.Module):
     def featuresClassification(self, x):
         if(self.features_classification is None):
             raise AssertionError('Classification feature network not set.')
-        x = self.features_classification(x)       
+        x = self.features_classification(x)
         x = x.view(x.size(0), -1)
         return x
 
@@ -127,8 +131,7 @@ def gen_pose_net_alexnet(pretrained=False, **kwargs):
     if pretrained:
         
         model_dict = model.state_dict()
-
-        pretrained_dict = model_zoo.load_url(alexnet.model_urls['alexnet'])
+        pretrained_dict = model_zoo.load_url(model_urls['alexnet'])
         update_dict = {}
 
         for k, v in pretrained_dict.items():
