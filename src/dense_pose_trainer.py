@@ -141,11 +141,11 @@ class DensePoseTrainer(object):
               num_display_imgs=1):
         model.train()
         model.cuda()
-        if(optimizer == 'SGD'):
+        if(optimizer.lower() == 'sgd'):
             self.optimizer = SGD(model.parameters(), lr=lr, momentum=0.9)
-        elif(optimizer == 'Adam'):
+        elif(optimizer.lower() == 'adam'):
             self.optimizer = Adam(model.parameters(), lr=lr)
-        elif(optimizer == 'Adadelta'):
+        elif(optimizer.lower() == 'adadelta'):
             self.optimizer = Adadelta(model.parameters(), lr=lr)
         else:
             raise AssertionError('Unsupported Optimizer {}, only SGD, Adam, and Adadelta supported'.format(optimizer))
@@ -327,17 +327,17 @@ def main():
     current_timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     results_dir = os.path.join(args.results_dir,current_timestamp)    
     
-    if(args.model_type == 'alexnet'):
+    if(args.model_type.lower() == 'alexnet'):
         model = gen_pose_net_alexnet(pretrained=args.pretrained)
-    elif(args.model_type == 'vgg'):
+    elif(args.model_type.lower() == 'vgg'):
         model = gen_pose_net_vgg16(classification = args.classification, 
                                    regression = args.regression, 
                                    pretrained=args.pretrained)
-    elif(args.model_type == 'resnet101'):
+    elif(args.model_type.lower() == 'resnet101'):
         model = gen_pose_net_resnet101(classification = args.classification, 
                                        regression = args.regression, 
                                        pretrained=args.pretrained)
-    elif(args.model_type == 'resnet50'):
+    elif(args.model_type.lower() == 'resnet50'):
         model = gen_pose_net_resnet50(classification = args.classification, 
                                       regression = args.regression, 
                                       pretrained=args.pretrained)
