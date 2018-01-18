@@ -12,7 +12,7 @@ import numpy as np
 
 import torch.optim as optim
 from torch.autograd import Variable
-from torch.optim import Adam, Adadelta
+from torch.optim import Adam, Adadelta, SGD
 from torch.utils.data import DataLoader
 
 import os
@@ -44,6 +44,7 @@ class DensePoseTrainer(object):
                  background_filenames = None,
                  num_model_imgs = 250000,
                  num_bins = (100,100,50),
+                 distance_sigma = 1,
                  seed = 0):
         
         torch.manual_seed(seed)
@@ -56,7 +57,8 @@ class DensePoseTrainer(object):
                                                              img_size = img_size,
                                                              background_filenames = background_filenames,
                                                              num_model_imgs=num_model_imgs,
-                                                             num_bins=self.num_bins),
+                                                             num_bins=self.num_bins,
+                                                             distance_sigma=distance_sigma),
                                        num_workers=batch_size, 
                                        batch_size=batch_size, 
                                        shuffle=True)
@@ -65,7 +67,8 @@ class DensePoseTrainer(object):
                                                              img_size = img_size,
                                                              background_filenames = background_filenames,
                                                              num_model_imgs=num_model_imgs,
-                                                             num_bins=self.num_bins),
+                                                             num_bins=self.num_bins,
+                                                             distance_sigma=distance_sigma),
                                        num_workers=num_workers, 
                                        batch_size=batch_size, 
                                        shuffle=True)
@@ -134,12 +137,19 @@ class DensePoseTrainer(object):
               num_epochs = 100000,
               log_every_nth = 10,
               lr = 1e-5,
+              optimizer = 'SGD',
               num_display_imgs=1):
         model.train()
         model.cuda()
-        self.optimizer = Adam(model.parameters(), lr=lr)
- 
-
+        if(optimizer == 'SGD'):
+            self.optimizer = SGD(model.parameters(), lr=lr, momentum=0.9)
+        elif(optimizer == 'Adam'):
+            self.optimizer = Adam(model.parameters(), lr=lr)
+        elif(optimizer == 'Adadelta'):
+            self.optimizer = Adadelta(model.parameters(), lr=lr)
+        else:
+            raise AssertionError('Unsupported Optimizer {}, only SGD, Adam, and Adadelta supported'.format(optimizer))
+            
         if not os.path.exists(results_dir):
             os.makedirs(results_dir)
         
@@ -234,18 +244,23 @@ class DensePoseTrainer(object):
                     for tag, images in info.items():
                         logger.image_summary(tag, images, cumulative_batch_idx+1)
                     
-                    if(('loss_quat' in valid_results and valid_results['loss_quat'] < min_loss_quat) \
-                        or ('loss_binned' in valid_results and valid_results['loss_binned'] < min_loss_binned)):
+                    self.optimizer.zero_grad()
 
+                    if('loss_quat' in valid_results and valid_results['loss_quat'] < min_loss_quat):
                         min_loss_quat = min(min_loss_quat, valid_results.setdefault('loss_quat', -float('inf')))
-                        min_loss_binned = min(min_loss_binned, valid_results.setdefault('loss_binned', -float('inf')))
 
-                        weights_filename = os.path.join(weights_dir, 'epoch_{0:0{4}d}_batch_{1:0{5}d}_lquat_{2:.4f}_lbinned_{3:.4f}.pth'.\
-                                              format(epoch_idx, cumulative_batch_idx + 1, 
-                                              valid_results['loss_quat'], 
-                                              valid_results['loss_binned'],
-                                              epoch_digits, batch_digits))
+#                        
+#                                              format(epoch_idx, cumulative_batch_idx + 1, 
+#                                              valid_results['loss_quat'], 
+#                                              valid_results['loss_binned'],
+#                                              epoch_digits, batch_digits))
+                        weights_filename = os.path.join(weights_dir, 'best_quat.pth')
+                        print("saving model ", weights_filename)
+                        torch.save(model.state_dict(), weights_filename)
+                    if('loss_binned' in valid_results and valid_results['loss_binned'] < min_loss_binned):
+                        min_loss_binned = min(min_loss_binned, valid_results.setdefault('loss_binned', -float('inf')))
                                                                            
+                        weights_filename = os.path.join(weights_dir, 'best_binned.pth')
                         print("saving model ", weights_filename)
                         torch.save(model.state_dict(), weights_filename)
                         
@@ -270,7 +285,9 @@ def main():
     parser.add_argument('--height', type=int, default=224)
     parser.add_argument('--width', type=int, default=224)
     
+    parser.add_argument('--distance_sigma', type=float, default=1.0)
     parser.add_argument('--lr', type=float, default=1e-5)
+    parser.add_argument('--optimizer', type=str, default='Adam')
     
     parser.add_argument('--model_type', type=str, default='resnet101')
     parser.add_argument('--train_classification', dest='classification', action='store_true')
@@ -303,6 +320,7 @@ def main():
                                background_filenames = background_filenames,
                                num_model_imgs = args.num_model_imgs,
                                num_bins = (50,50,25),
+                               distance_sigma = args.distance_sigma, 
                                seed = args.random_seed)
 
 
@@ -329,7 +347,8 @@ def main():
     trainer.train(model, results_dir, 
                   num_epochs = args.num_epochs,
                   log_every_nth = args.log_every_nth,
-                  lr = args.lr)
+                  lr = args.lr,
+                  optimizer=args.optimizer)
 
 if __name__=='__main__':
     main()
