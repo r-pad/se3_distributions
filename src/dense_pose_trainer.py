@@ -156,12 +156,20 @@ class DensePoseTrainer(object):
         log_dir = os.path.join(results_dir,'logs')
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
+        train_log_dir = os.path.join(log_dir,'train')
+        if not os.path.exists(train_log_dir):
+            os.makedirs(train_log_dir)
         
+        valid_log_dir = os.path.join(log_dir,'valid')
+        if not os.path.exists(valid_log_dir):
+            os.makedirs(valid_log_dir)  
+            
         weights_dir = os.path.join(results_dir,'weights')
         if not os.path.exists(weights_dir):
             os.makedirs(weights_dir)
             
-        logger = Logger(log_dir)
+        train_logger = Logger(train_log_dir)
+        valid_logger = Logger(valid_log_dir)
     
         cumulative_batch_idx = 0
         min_loss_quat = float('inf')
@@ -188,23 +196,28 @@ class DensePoseTrainer(object):
                     
                     print("epoch {} :: cumulative_batch_idx {}".format(epoch_idx, cumulative_batch_idx + 1))
                     
-                    info = {}
+                    train_info = {}
                     
                     for k,v in train_results.items():
                         if('est' not in k):
-                            info['train_' + k] = v
+                            train_info[k] = v
+
+                    valid_info = {}
 
                     for k,v in valid_results.items():
                         if('est' not in k):
-                            info['valid_' + k] = v
+                            valid_info[k] = v
                             
-                    for tag, value in info.items():
-                        logger.scalar_summary(tag, value, cumulative_batch_idx+1)
-            
+                    for tag, value in train_info.items():
+                        train_logger.scalar_summary(tag, value, cumulative_batch_idx+1)
+                    
+                    for tag, value in valid_info.items():
+                        valid_logger.scalar_summary(tag, value, cumulative_batch_idx+1)
+                    
                     for tag, value in model.named_parameters():
                         tag = tag.replace('.', '/')
-                        logger.histo_summary(tag, to_np(value), cumulative_batch_idx+1)
-                        logger.histo_summary(tag+'/grad', to_np(value.grad), cumulative_batch_idx+1)
+                        train_logger.histo_summary(tag, to_np(value), cumulative_batch_idx+1)
+                        train_logger.histo_summary(tag+'/grad', to_np(value.grad), cumulative_batch_idx+1)
             
                     if('quat_est' in train_results):
                         train_quat_est = to_np(train_results['quat_est'][:num_display_imgs])
@@ -236,13 +249,19 @@ class DensePoseTrainer(object):
                                                             to_np(v_class_true[:num_display_imgs]), to_np(v_quat_true[:num_display_imgs]),
                                                             valid_class_est, valid_quat_est, num_bins = self.num_bins)
             
-                    info = {
-                        'train': train_disp_imgs,
-                        'valid': valid_disp_imgs,
+                    train_info = {
+                        'display': train_disp_imgs,
                     }
             
-                    for tag, images in info.items():
-                        logger.image_summary(tag, images, cumulative_batch_idx+1)
+                    for tag, images in train_info.items():
+                        train_logger.image_summary(tag, images, cumulative_batch_idx+1)
+                    
+                    valid_info = {
+                        'display': valid_disp_imgs,
+                    }
+            
+                    for tag, images in valid_info.items():
+                        valid_logger.image_summary(tag, images, cumulative_batch_idx+1)
                     
                     self.optimizer.zero_grad()
 
@@ -279,6 +298,7 @@ def main():
     parser.add_argument('--train_data_folder', type=str, default=None)
     parser.add_argument('--valid_data_folder', type=str, default=None)
     
+    parser.add_argument('--weight_file', type=str, default=None)
     parser.add_argument('--background_data_file', type=str, default=None)
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--num_workers', type=int, default=4)
@@ -327,6 +347,9 @@ def main():
     current_timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     results_dir = os.path.join(args.results_dir,current_timestamp)    
     
+    if args.weight_file is not None:
+        args.pretrained = False
+        
     if(args.model_type.lower() == 'alexnet'):
         model = gen_pose_net_alexnet(pretrained=args.pretrained)
     elif(args.model_type.lower() == 'vgg'):
@@ -344,6 +367,9 @@ def main():
     else:
         raise AssertionError('Model type {} not supported, alexnet, vgg and resnet are only valid types'.format(args.model_type))
         
+    if args.weight_file is not None:
+        model.load_state_dict(torch.load(args.weight_file))
+
     trainer.train(model, results_dir, 
                   num_epochs = args.num_epochs,
                   log_every_nth = args.log_every_nth,

@@ -49,13 +49,15 @@ def denseViewpointError(preds, labels, num_bins = (100, 100, 50)):
     batch_size = preds.size(0)
     
     err = 0
+    u_err = 0
     for inst_id in range(batch_size):
         pred_max_idx = np.unravel_index(np.argmax(preds[inst_id, :].data.cpu().numpy()), num_bins)
         label_max_idx = np.unravel_index(np.argmax(labels[inst_id, :].data.cpu().numpy()), num_bins)
         pred_u = (np.array(pred_max_idx) + 0.5)/np.array(num_bins_full)
         label_u = (np.array(label_max_idx) + 0.5)/np.array(num_bins_full)
+        u_err += np.linalg.norm(pred_u - label_u)
         pred_q = uniform2Quat(pred_u)
         label_q = uniform2Quat(label_u)
         err += quatAngularDiff(pred_q, label_q)
         
-    return err/batch_size
+    return err/batch_size, u_err/batch_size
