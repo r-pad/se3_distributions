@@ -193,7 +193,10 @@ def quat2AxisAngle(q):
     if(q[-1] < 0):
         q *= -1 
     angle = 2*np.arccos(q[3])
-    axis = q[:3]/np.sin(angle/2.0)
+    if(np.sin(angle/2.0) != 0):
+        axis = q[:3]/np.sin(angle/2.0)
+    else:
+        axis = np.array([0,0,1])
     return axis, angle
 
 def index2Uniform(idx, num_bins):
