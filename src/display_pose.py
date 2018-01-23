@@ -146,10 +146,18 @@ def makeDisplayImageDense(origin_imgs, query_imgs,
     
 def imageMosaic(class_values, cmap, num_bins = (100, 100, 50)):
     sm = class_values.reshape(num_bins).transpose([0,2,1]).reshape(num_bins[0], num_bins[1]*num_bins[2]) / class_values.sum()
+    max_idx = np.unravel_index(np.argmax(sm), (num_bins[0], num_bins[2], num_bins[1]))
     sm_img = get_colors(sm, cmap)[:,:,:3]
     mosaic_list = []
-    for img_slice in np.split(sm_img, num_bins[2], axis=1):
+    for j, img_slice in enumerate(np.split(sm_img, num_bins[2], axis=1)):
+        if j == max_idx[1]:
+            max_slice = img_slice.copy()
+            cv2.circle(max_slice, (max_idx[2], max_idx[0]), 2, (0,1,0), -1) 
+            img_slice = max_slice
         mosaic_list.append(img_slice)
-        mosaic_list.append(np.zeros((num_bins[0],1,3)))
+        mosaic_list.append(np.zeros((num_bins[0],1,3)))    
     
     return np.concatenate(mosaic_list[:-1], axis=1)
+
+#def renderDistribution(class_values):
+    
