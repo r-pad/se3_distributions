@@ -178,13 +178,16 @@ def quatDiff(q1, q2):
 def quatAngularDiff(q1, q2):
     q_diff = quatDiff(q1, q2)
     return quat2AxisAngle(q_diff)[1]
+
+def uniformAngularDiff(u1, u2):
+    q1 = uniform2Quat(u1)
+    q2 = uniform2Quat(u2)
+    return quatAngularDiff(q1, q2)
     
 def indexAngularDiff(idx1, idx2, num_bins):
     u1 = index2Uniform(idx1, num_bins)
-    q1 = uniform2Quat(u1)
     u2 = index2Uniform(idx2, num_bins)
-    q2 = uniform2Quat(u2)
-    return quatAngularDiff(q1, q2)
+    return uniformAngularDiff(u1, u2)
     
 def quat2AxisAngle(q):
     if(q[-1] < 0):
