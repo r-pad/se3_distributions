@@ -20,6 +20,14 @@ from pose_renderer import renderView
 import transformations as tf
 from data_preprocessing import label2Probs, resizeAndPad, uniformRandomQuaternion, transparentOverlay, quat2Uniform, randomQuatNear
 
+from multiprocessing import Pool
+import datetime
+from itertools import repeat
+
+def pool_render(args):
+    print(args[0])
+    renderView(args[0], args[1], args[2], filenames=args[3])
+
 class PoseRendererDataSet(Dataset):
     def __init__(self, model_filenames, img_size, 
                  background_filenames = None,
@@ -27,7 +35,8 @@ class PoseRendererDataSet(Dataset):
                  prerender = True,
                  num_model_imgs = 250000,
                  data_folder = None,
-                 save_data = False):
+                 save_data = False,
+                 num_render_workers=20):
 
         super(PoseRendererDataSet, self).__init__()
         
@@ -56,7 +65,10 @@ class PoseRendererDataSet(Dataset):
                 [model_class, model, model_file] = filename.split('/')[-3:]
     
                 self.model_filenames.append(filename)
-                
+            
+            self.per_model_workers = max(num_render_workers//len(self.model_filenames), 1)
+            self.global_model_workers = num_render_workers//len(self.model_filenames)
+
             if self.prerendered:
                 if self.data_folder is None:
                     self.data_folder = tempfile.mkdtemp()
@@ -190,6 +202,9 @@ class PoseRendererDataSet(Dataset):
             data = self.generateRotations()            
             render_quats.append(data[0])
             render_quats.append(data[1])
+            np.save(data_filename + '_origin.npy',  data[0])
+            np.save(data_filename + '_query.npy',  data[1])
+
             np.savez(data_filename + '.npz', 
                      offset_quat = data[2], 
                      offset_u0 =  data[3], 
@@ -198,7 +213,16 @@ class PoseRendererDataSet(Dataset):
                      u_bins =  data[6])
             
         # Will need to make distance random at some point
-        renderView(model_filename, render_quats, self.camera_dist, filenames=image_filenames)
+        pool = Pool(self.per_model_workers)
+        #pool_model_filename = [model_filename]*self.per_model_workers
+        #pool_camera_dist = [self.camera_dist]*self.per_model_workers
+        pool_render_quats = np.split(np.array(render_quats), self.per_model_workers)
+        pool_image_filenames = np.split(np.array(image_filenames), self.per_model_workers)
+
+        args = zip(repeat(model_filename), pool_render_quats, repeat(self.camera_dist), pool_image_filenames)
+        for idx, return_code in enumerate(pool.imap(pool_render, args)):
+            print('{} Rendering Model {} group {}'.format(datetime.datetime.now().time(), model_filename, idx))
+            
 
     def __len__(self):
         if(self.prerendered):

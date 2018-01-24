@@ -28,7 +28,7 @@ def label2DenseWeights(u, num_bins = (100, 100, 50), sigma=5):
     u1_space = np.linspace(0,1,num_bins_full[1], endpoint=False) + .5/num_bins_full[1]
     u2_space = np.linspace(0,1,num_bins_full[2], endpoint=False) + .5/num_bins_full[2]
     
-    u0 = u0_space[u_idxs[0]];
+    u0 = u[0]#u0_space[u_idxs[0]];
     r1 = np.expand_dims(np.sqrt(1-u0_space), axis=1)
     r2 = np.expand_dims(np.sqrt(u0_space), axis=1)
 
@@ -39,8 +39,9 @@ def label2DenseWeights(u, num_bins = (100, 100, 50), sigma=5):
     rho2 = np.sqrt(u0);
     gamma1 = np.roll(w_theta1, u_idxs[1]);
     gamma2 = np.roll(w_theta2, u_idxs[2]);
-    gamma2 = np.concatenate((gamma2[:int(np.floor(num_bins_full[2]/4.))], gamma2[-int(np.ceil(num_bins_full[2]/4.)):]))
-    
+    gamma2 = np.concatenate((gamma2[:num_bins_full[2]//4+1], gamma2[3*num_bins_full[2]//4+1:]))
+    #gamma2 = np.concatenate((gamma2[:int(np.floor(num_bins_full[2]/4.))], gamma2[-int(np.ceil(num_bins_full[2]/4.)):]))
+    #gamma2 = np.concatenate((gamma2[:int(np.floor(num_bins_full[2]/4.)+1)], gamma2[int(-np.ceil(num_bins_full[2]/4.)+1):]))
     w1 = np.expand_dims(rho1*gamma1.T*r1, axis=0)
     w2 = np.expand_dims(rho2*r2.T*gamma2, axis=2)
     w = np.exp((np.abs(w1 + w2)-1) / sigma).transpose([1,2,0])
@@ -168,8 +169,7 @@ def quat2Uniform(q):
     u1 = (q[2]**2 + q[3]**2)
     u2 = np.arctan2(q[0],q[1])/(2.0*np.pi)
     u3 = np.arctan2(q[2],q[3])/(2.0*np.pi)
-    # current hach because u3 is half as large when angle is always pos
-    #u3*=2
+
     return np.array([u1, u2, u3])
     
 def quatDiff(q1, q2):
@@ -202,8 +202,11 @@ def quat2AxisAngle(q):
 def index2Uniform(idx, num_bins):
     num_bins_full = num_bins[:2] + (2*num_bins[2],)
     idx = np.array(idx)
-    if(idx[2] >= num_bins[2]//2):
+    if(idx[2] > num_bins[2]//2):
         idx[2] += num_bins[2]
-        
-    return (idx + 0.5)/np.array(num_bins_full)
     
+    return (idx + 0.5)/np.array(num_bins_full)
+
+def index2Quat(idx, num_bins):
+    u = index2Uniform(idx, num_bins)
+    return uniform2Quat(u)

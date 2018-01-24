@@ -21,7 +21,7 @@ from image_dataset_dense import PoseImageDenseDataSet
 
 from viewpoint_loss import ViewpointLoss, denseViewpointError
 from quaternion_loss import quaternionLoss, quaternionError
-from display_pose import makeDisplayImageDense
+from display_pose import makeDisplayImages, makeModeImages, makeDistributionImages
     
 def to_np(x):
     if torch.is_tensor(x):
@@ -43,7 +43,7 @@ class DensePoseTrainer(object):
                  num_workers = 4,
                  background_filenames = None,
                  num_model_imgs = 250000,
-                 num_bins = (100,100,50),
+                 num_bins = (50,50,25),
                  distance_sigma = 1,
                  seed = 0):
         
@@ -123,8 +123,9 @@ class DensePoseTrainer(object):
             results['class_est'] = class_est
             results['loss_binned'] = loss_binned.data[0]
             if(disp_metrics):
-                err_binned = denseViewpointError(class_est, class_true, self.num_bins)            
+                err_binned, err_idx = denseViewpointError(class_est, class_true, self.num_bins)            
                 results['err_binned'] = err_binned
+                results['err_idx'] = err_idx
                 results['mean_origin_features_classification'] = np.mean(np.abs(to_np(origin_features_classification)))
                 results['mean_query_features_classification'] = np.mean(np.abs(to_np(query_features_classification)))        
         
@@ -177,8 +178,8 @@ class DensePoseTrainer(object):
 
         print('Starting Training')
         
-        epoch_digits = len(str(num_epochs+1))
-        batch_digits = 8#len(str(len(self.train_loader)))        
+        #epoch_digits = len(str(num_epochs+1))
+        #batch_digits = 8#len(str(len(self.train_loader)))        
         
         for epoch_idx in range(1, num_epochs+1):
             for batch_idx, (origin, query, quat_true, class_true) in enumerate(self.train_loader):
@@ -226,10 +227,16 @@ class DensePoseTrainer(object):
                     
                     if('class_est' in train_results):
                         train_class_est = to_np(train_results['class_est'][:num_display_imgs])
+                        train_modes_imgs = makeModeImages(train_class_est, self.num_bins)
+                        #train_dist_imgs = makeDistributionImages(train_class_est, self.num_bins)
+                        train_info = {'modes': train_modes_imgs,
+                                      #'distribution': train_dist_imgs,
+                                      }
                     else:
                         train_class_est = None
+                        train_info = {}
                         
-                    train_disp_imgs = makeDisplayImageDense(to_np(origin.view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs]),
+                    train_disp_imgs = makeDisplayImages(to_np(origin.view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs]),
                                                             to_np(query.view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs]),
                                                             to_np(class_true[:num_display_imgs]), to_np(quat_true[:num_display_imgs]),
                                                             train_class_est, train_quat_est, num_bins = self.num_bins)
@@ -241,24 +248,26 @@ class DensePoseTrainer(object):
                     
                     if('class_est' in valid_results):
                         valid_class_est = to_np(valid_results['class_est'][:num_display_imgs])
+                        valid_modes_imgs = makeModeImages(valid_class_est, self.num_bins)
+                        #valid_dist_imgs = makeDistributionImages(valid_class_est, self.num_bins)
+                        valid_info = {'modes': valid_modes_imgs,
+                                      #'distribution': valid_dist_imgs,
+                                      }
                     else:
                         valid_class_est = None
+                        valid_info = {}
                     
-                    valid_disp_imgs = makeDisplayImageDense(to_np(v_origin.view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs]),
+                    valid_disp_imgs = makeDisplayImages(to_np(v_origin.view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs]),
                                                             to_np(v_query.view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs]),
                                                             to_np(v_class_true[:num_display_imgs]), to_np(v_quat_true[:num_display_imgs]),
                                                             valid_class_est, valid_quat_est, num_bins = self.num_bins)
             
-                    train_info = {
-                        'display': train_disp_imgs,
-                    }
+                    train_info['display'] = train_disp_imgs
             
                     for tag, images in train_info.items():
                         train_logger.image_summary(tag, images, cumulative_batch_idx+1)
                     
-                    valid_info = {
-                        'display': valid_disp_imgs,
-                    }
+                    valid_info['display'] = valid_disp_imgs
             
                     for tag, images in valid_info.items():
                         valid_logger.image_summary(tag, images, cumulative_batch_idx+1)

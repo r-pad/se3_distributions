@@ -6,12 +6,12 @@ Caffe implmentation:
 https://github.com/charlesq34/caffe-render-for-cnn/blob/view_prediction/
 """
 
-import torch
 import torch.nn.functional as F
 from torch import nn
 import numpy as np
+import scipy
 
-from data_preprocessing import uniform2Quat, quatAngularDiff
+from data_preprocessing import indexAngularDiff
 
 class ViewpointLoss(nn.Module):
     def __init__(self, mean = True):
@@ -43,21 +43,16 @@ def viewpointAccuracy(preds, labels):
     return acc.sum() / acc.shape[0]
     #return acc
     
-def denseViewpointError(preds, labels, num_bins = (100, 100, 50)):
-    num_bins_full = num_bins[:2] + (2*num_bins[2],)
-
-    batch_size = preds.size(0)
-    
+def denseViewpointError(preds, labels, num_bins = (50, 50, 25), filter_sigma = 1.0):
+    batch_size = preds.size(0)    
     err = 0
-    u_err = 0
+    idx_err = 0
     for inst_id in range(batch_size):
-        pred_max_idx = np.unravel_index(np.argmax(preds[inst_id, :].data.cpu().numpy()), num_bins)
+        vals = preds[inst_id, :].data.cpu().numpy().reshape(num_bins)
+        filtered_preds = scipy.ndimage.filters.gaussian_filter(vals, sigma=filter_sigma, mode='wrap')
+        pred_max_idx = np.unravel_index(np.argmax(filtered_preds), num_bins)
         label_max_idx = np.unravel_index(np.argmax(labels[inst_id, :].data.cpu().numpy()), num_bins)
-        pred_u = (np.array(pred_max_idx) + 0.5)/np.array(num_bins_full)
-        label_u = (np.array(label_max_idx) + 0.5)/np.array(num_bins_full)
-        u_err += np.linalg.norm(pred_u - label_u)
-        pred_q = uniform2Quat(pred_u)
-        label_q = uniform2Quat(label_u)
-        err += quatAngularDiff(pred_q, label_q)
+        err += indexAngularDiff(pred_max_idx, label_max_idx, num_bins)
+        idx_err += np.linalg.norm(np.array(pred_max_idx) - np.array(label_max_idx))
         
-    return err/batch_size, u_err/batch_size
+    return err/batch_size, idx_err/batch_size

@@ -21,7 +21,7 @@ from renderer_dataset import PoseRendererDataSet
 
 from viewpoint_loss import ViewpointLoss, viewpointAccuracy
 from quaternion_loss import quaternionLoss
-from display_pose import makeDisplayImage
+from display_pose import makeEulerDisplayImages
     
 def to_np(x):
     if torch.is_tensor(x):
@@ -226,11 +226,11 @@ class PoseTrainer(object):
                         train_u1_est = None
                         train_u2_est = None
                         
-                    train_disp_imgs = makeDisplayImage(to_np(origin.view(-1, 3, self.img_size[0], self.img_size[1])[:10]),
-                                                       to_np(query.view(-1, 3, self.img_size[0], self.img_size[1])[:10]),
-                                                       to_np(u0_true[:10]), to_np(u1_true[:10]), 
-                                                       to_np(u2_true[:10]), to_np(quat_true[:10]),
-                                                       train_u0_est, train_u1_est, train_u2_est, train_quat_est)
+                    train_disp_imgs = makeEulerDisplayImages(to_np(origin.view(-1, 3, self.img_size[0], self.img_size[1])[:10]),
+                                                             to_np(query.view(-1, 3, self.img_size[0], self.img_size[1])[:10]),
+                                                             to_np(u0_true[:10]), to_np(u1_true[:10]), 
+                                                             to_np(u2_true[:10]), to_np(quat_true[:10]),
+                                                             train_u0_est, train_u1_est, train_u2_est, train_quat_est)
 
                     if('quat_est' in valid_results):
                         valid_quat_est = to_np(valid_results['quat_est'][:10])
@@ -246,11 +246,11 @@ class PoseTrainer(object):
                         valid_u1_est = None
                         valid_u2_est = None
                     
-                    valid_disp_imgs = makeDisplayImage(to_np(v_origin.view(-1, 3, self.img_size[0], self.img_size[1])[:10]),
-                                                       to_np(v_query.view(-1, 3, self.img_size[0], self.img_size[1])[:10]),
-                                                       to_np(v_u0_true[:10]), to_np(v_u1_true[:10]), 
-                                                       to_np(v_u2_true[:10]), to_np(v_quat_true[:10]),
-                                                       valid_u0_est, valid_u1_est, valid_u2_est, valid_quat_est)
+                    valid_disp_imgs = makeEulerDisplayImages(to_np(v_origin.view(-1, 3, self.img_size[0], self.img_size[1])[:10]),
+                                                             to_np(v_query.view(-1, 3, self.img_size[0], self.img_size[1])[:10]),
+                                                             to_np(v_u0_true[:10]), to_np(v_u1_true[:10]), 
+                                                             to_np(v_u2_true[:10]), to_np(v_quat_true[:10]),
+                                                             valid_u0_est, valid_u1_est, valid_u2_est, valid_quat_est)
             
                     info = {
                         'train': train_disp_imgs,
