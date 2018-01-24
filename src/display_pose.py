@@ -185,8 +185,10 @@ def imageMosaic(class_values, num_bins, cmap = plt.cm.Blues, num_modes=10):
     local_max_vals = class_prob[local_max_idxs]
     local_max_idxs = np.array(local_max_idxs).T
 
-    modes = np.array([idx for _, idx in sorted(zip(local_max_vals, local_max_idxs), reverse=True)[:num_modes]])    
-    
+    modes = np.concatenate([np.expand_dims(local_max_vals,axis=1), local_max_idxs], axis=1)
+    modes = np.sort(modes, axis=0)[::-1]
+    modes = modes[:num_modes, 1:].astype(int)
+
     sm_img = get_colors(sm, cmap)[:,:,:3]
     mosaic_list = []
     for j, img_slice in enumerate(np.split(sm_img, num_bins[2], axis=1)):
@@ -212,8 +214,9 @@ def imageMosaicMode(class_values, num_bins, cmap = plt.cm.Blues,  filter_sigma=1
     local_max_vals = filtered_values[local_max_idxs]
     local_max_idxs = np.array(local_max_idxs).T
 
-    modes = np.array([idx for _, idx in sorted(zip(local_max_vals, local_max_idxs), reverse=True)[:num_modes]])
-    
+    modes = np.concatenate([np.expand_dims(local_max_vals,axis=1), local_max_idxs], axis=1)
+    modes = np.sort(modes, axis=0)[::-1]
+    modes = modes[:num_modes, 1:].astype(int)
     #sm = np.roll(filtered_values.reshape(num_bins[0], num_bins[1]*num_bins[2]) / class_values.sum(), num_bins[2]//2 *  num_bins[1])
     sm = filtered_values.transpose([0,2,1]).reshape(num_bins[0], num_bins[1]*num_bins[2]) / filtered_values.sum()
     sm_img = get_colors(sm, cmap)[:,:,:3]
@@ -254,8 +257,9 @@ def renderModes(class_prob, num_bins, filter_sigma=0, max_window = 5, num_modes=
     local_max_vals = filtered_values[local_max_idxs]
     local_max_idxs = np.array(local_max_idxs).T
 
-    modes = np.array([idx for _, idx in sorted(zip(local_max_vals, local_max_idxs), reverse=True)[:num_modes]])
-    
+    modes = np.concatenate([np.expand_dims(local_max_vals,axis=1), local_max_idxs], axis=1)
+    modes = np.sort(modes, axis=0)[::-1]
+    modes = modes[:num_modes]
     fig = plt.figure()#get_figure()
     ax = fig.gca(projection='3d')
 
@@ -263,9 +267,10 @@ def renderModes(class_prob, num_bins, filter_sigma=0, max_window = 5, num_modes=
     ys = []
     zs = []
     
-    for idx in modes:
+    for val_idx in modes:
+        p = val_idx[0]
+        idx = val_idx[1:]
         x_axis, y_axis, z_axis = index2Axis(idx, num_bins)
-        p = class_prob[tuple(idx)]
 
         xs.append(p*x_axis)
         ys.append(p*y_axis)
