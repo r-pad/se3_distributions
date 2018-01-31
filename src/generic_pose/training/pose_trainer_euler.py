@@ -5,7 +5,7 @@ Created on Thu Jan  4 00:27:44 2018
 @author: bokorn
 """
 
-from logger import Logger
+from .logger import Logger
 
 import torch
 import numpy as np
@@ -17,11 +17,11 @@ from torch.utils.data import DataLoader
 
 import os
 
-from renderer_dataset import PoseRendererDataSet
+from generic_pose.datasets.renderer_dataset import PoseRendererDataSet
 
-from viewpoint_loss import ViewpointLoss, viewpointAccuracy
-from quaternion_loss import quaternionLoss
-from display_pose import makeEulerDisplayImages
+from generic_pose.losses.viewpoint_loss import ViewpointLoss, viewpointAccuracy
+from generic_pose.losses.quaternion_loss import quaternionLoss
+from generic_pose.utils.display_pose import makeEulerDisplayImages
     
 def to_np(x):
     if torch.is_tensor(x):
@@ -34,7 +34,7 @@ def to_var(x):
         x = x.cuda()
     return Variable(x)    
 
-class PoseTrainer(object):
+class PoseTrainerEuler(object):
     def __init__(self, 
                  train_filenames,
                  valid_filenames,
@@ -338,19 +338,19 @@ def main():
     else:
         background_filenames = None
 
-    trainer = PoseTrainer(train_filenames = train_filenames,
-                          valid_filenames = valid_filenames,
-                          img_size = (args.width,args.height),
-                          batch_size = args.batch_size,
-                          num_workers = args.num_workers,
-                          background_filenames = background_filenames,
-                          max_orientation_offset = args.max_orientation_offset,
-                          prerender = args.prerender,
-                          num_model_imgs = args.num_model_imgs,
-                          train_data_folder = args.train_data_folder,
-                          valid_data_folder = args.valid_data_folder,
-                          save_data = args.save_data and args.prerender,
-                          seed = args.random_seed)
+    trainer = PoseTrainerEuler(train_filenames = train_filenames,
+                               valid_filenames = valid_filenames,
+                               img_size = (args.width,args.height),
+                               batch_size = args.batch_size,
+                               num_workers = args.num_workers,
+                               background_filenames = background_filenames,
+                               max_orientation_offset = args.max_orientation_offset,
+                               prerender = args.prerender,
+                               num_model_imgs = args.num_model_imgs,
+                               train_data_folder = args.train_data_folder,
+                               valid_data_folder = args.valid_data_folder,
+                               save_data = args.save_data and args.prerender,
+                               seed = args.random_seed)
 
 
     current_timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')

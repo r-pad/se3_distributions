@@ -13,23 +13,23 @@ Created on Tue Jan  2 22:38:19 2018
 """
 import cv2
 import numpy as np
-#import os
+import os
 import torch
 from torch.utils.data import Dataset
 import torchvision.transforms as transforms
 
 import glob
 
-from data_preprocessing import label2DenseWeights, quat2Uniform, resizeAndPad, transparentOverlay
+from generic_pose.utils.data_preprocessing import label2DenseWeights, quat2Uniform, resizeAndPad, transparentOverlay
 
-class PoseImageDenseDataSet(Dataset):
+class PoseImagePairsDataSet(Dataset):
     def __init__(self, img_size, data_folder,
                  background_filenames = None,
                  num_bins = (100,100,50),
                  distance_sigma = 5,
                  num_model_imgs = 250000):
 
-        super(PoseImageDenseDataSet, self).__init__()
+        super(PoseImagePairsDataSet, self).__init__()
         
         self.img_size = img_size
         self.num_bins = num_bins
@@ -65,7 +65,11 @@ class PoseImageDenseDataSet(Dataset):
         npzfile = np.load(self.data_filenames[index] + '.npz')
         offset_quat = npzfile['offset_quat']
         offset_u = quat2Uniform(offset_quat)
-
+        origin_quat = np.load(self.data_filenames[index] + '_origin.npy')
+        
+        #Need to fix this
+        model_class, model_name = self.data_filenames[index].split('/')[-1].split('_')[:2]
+        model_file = os.path.join('/media/bokorn/ExtraDrive1/shapenetcore', model_class, model_name, 'model.obj')
         offset_class = label2DenseWeights(offset_u, (self.num_bins[0],self.num_bins[1],self.num_bins[2]), self.distance_sigma)
         #offset_w = npzfile['offset_w']
     
@@ -78,7 +82,7 @@ class PoseImageDenseDataSet(Dataset):
         offset_quat = torch.from_numpy(offset_quat)
         offset_class = torch.from_numpy(offset_class)
                                       
-        return origin_img, query_img, offset_quat, offset_class
+        return origin_img, query_img, offset_quat, offset_class, origin_quat, model_file
  
     def preprocessImages(self, image):
         num_background_files = len(self.background_filenames)

@@ -9,7 +9,7 @@ import numpy as np
 import cv2
 import scipy.interpolate as interpolate
 
-import transformations as tf
+from . import transformations as tf_trans
 
 
 def calcViewlossVec(size, sigma):
@@ -146,8 +146,8 @@ def randomQuatNear(init_quat, max_orientation_offset):
     offset_axis /= np.linalg.norm(offset_axis)
     norm_const = 1/2 * (max_orientation_offset - np.cos(max_orientation_offset)*np.sin(max_orientation_offset))
     offset_angle = _inv_cdf(norm_const * np.random.rand())
-    offset_quat = tf.quaternion_about_axis(offset_angle, offset_axis)
-    near_quat = tf.quaternion_multiply(init_quat, offset_quat)
+    offset_quat = tf_trans.quaternion_about_axis(offset_angle, offset_axis)
+    near_quat = tf_trans.quaternion_multiply(init_quat, offset_quat)
     return near_quat, offset_quat
 
 def uniformRandomQuaternion():
@@ -173,7 +173,7 @@ def quat2Uniform(q):
     return np.array([u1, u2, u3])
     
 def quatDiff(q1, q2):
-    return tf.quaternion_multiply(q1, tf.quaternion_conjugate(q2))
+    return tf_trans.quaternion_multiply(q1, tf_trans.quaternion_conjugate(q2))
     
 def quatAngularDiff(q1, q2):
     q_diff = quatDiff(q1, q2)

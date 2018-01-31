@@ -7,17 +7,18 @@ Created on Wed Dec 20 17:39:11 2017
 
 import cv2
 import numpy as np
-from data_preprocessing import quat2AxisAngle, index2Quat
+from .data_preprocessing import quat2AxisAngle, index2Quat, transparentOverlay, indexAngularDiff, quatAngularDiff
 
 import scipy
 from scipy import ndimage as ndi
 
 import matplotlib
-matplotlib.use('Agg')
+#matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-import transformations as tf
+from . import transformations as tf_trans
+from .pose_renderer import renderView
 
 def get_figure():
   fig = plt.figure(num=0, figsize=(6, 4), dpi=150)
@@ -133,30 +134,32 @@ def makeDisplayImages(origin_imgs, query_imgs,
 
         true_axis, true_angle = quat2AxisAngle(true_quats[j])
         display_string_true = 'True Angle: {:.3f}, True Axis: {}'.format(true_angle*180/np.pi, true_axis)
-        cv2.putText(disp_imgs[j], display_string_true, (10, disp_h-40),
+        text_height = disp_h-40
+        cv2.putText(disp_imgs[j], display_string_true, (10, text_height),
                     cv2.FONT_HERSHEY_SIMPLEX, .5, (1.0,1.0,1.0), 2)
-        cv2.putText(disp_imgs[j], display_string_true, (10, disp_h-40),
+        cv2.putText(disp_imgs[j], display_string_true, (10, text_height),
                     cv2.FONT_HERSHEY_SIMPLEX, .5, (0.0,0.0,0.0), 1)
-                    
+        text_height += 20
+
         if(est_quats is not None):
             est_q = est_quats[j]/np.linalg.norm(est_quats[j])
             est_q *= np.sign(est_q[3])
             est_axis, est_angle = quat2AxisAngle(est_q)
              
             display_string_est  = 'Est Angle:  {:.3f}, Est Axis:  {}'.format(est_angle*180/np.pi, est_axis)        
-            cv2.putText(disp_imgs[j], display_string_est, (10, disp_h-20),
+            cv2.putText(disp_imgs[j], display_string_est, (10, text_height),
                         cv2.FONT_HERSHEY_SIMPLEX, .5, (1.0,1.0,1.0), 2)
-            cv2.putText(disp_imgs[j], display_string_est, (10, disp_h-20),
+            cv2.putText(disp_imgs[j], display_string_est, (10, text_height),
                         cv2.FONT_HERSHEY_SIMPLEX, .5, (0.0,0.0,0.0), 1)
-
+            text_height += 20
         if(est_class is not None):
-            true_img = imageMosaic(true_class[j], num_bins, plt.cm.Blues)
-            est_img = imageMosaicMode(np.exp(est_class[j]), num_bins, plt.cm.Reds)
+            true_img = makeProbabilityMosaic(true_class[j], num_bins, plt.cm.Blues)
+            est_img = makeProbabilityMosaic(np.exp(est_class[j]), num_bins, plt.cm.Reds)
 
             true_img = cv2.resize(true_img, (display_width, class_h))
             est_img = cv2.resize(est_img, (display_width, class_h))
             
-            disp_col = disp_h + text_height + 1
+            disp_col = disp_h + 1
             disp_imgs[j, disp_col:disp_col+class_h, :, :] = true_img
             disp_col += class_h + 1
             disp_imgs[j, disp_col:disp_col+class_h, :, :] = est_img
@@ -166,46 +169,61 @@ def makeDisplayImages(origin_imgs, query_imgs,
             est_max_idx = np.unravel_index(np.argmax(np.exp(est_class[j])), num_bins)
 
             display_string_class = 'True Max Bin: {}, Est Max Bin: {}'.format(tuple(true_max_idx), tuple(est_max_idx))
-            cv2.putText(disp_imgs[j], display_string_class, (10, disp_h),
+            cv2.putText(disp_imgs[j], display_string_class, (10, text_height),
                         cv2.FONT_HERSHEY_SIMPLEX, .5, (1.0,1.0,1.0), 2)
-            cv2.putText(disp_imgs[j], display_string_class, (10, disp_h),
+            cv2.putText(disp_imgs[j], display_string_class, (10, text_height),
                         cv2.FONT_HERSHEY_SIMPLEX, .5, (0.0,0.0,0.0), 1)
             
     disp_imgs = np.transpose(disp_imgs, (0,3,1,2))
 
     return disp_imgs
-    
-def imageMosaic(class_values, num_bins, cmap = plt.cm.Blues, num_modes=10):
+
+#def imageMosaic(class_values, num_bins, cmap = plt.cm.Blues):
+#    class_prob = class_values.reshape(num_bins)
+#    sm = class_prob.transpose([0,2,1]).reshape(num_bins[0], num_bins[1]*num_bins[2]) / class_prob.sum()
+#    sm_img = get_colors(sm, cmap)[:,:,:3]
+#    
+#    mosaic_list = np.split(sm_img, num_bins[2], axis=1)
+#    
+#    return mosaic_list
+
+def makeProbabilityMosaic(class_values, num_bins, cmap = plt.cm.Blues, max_idx=True, max_radius=2):
+    if(type(max_idx) not in [list, tuple, np.ndarray]):
+        max_idx = np.unravel_index(np.argmax(class_values), num_bins)
+
     class_prob = class_values.reshape(num_bins)
-    max_idx = np.unravel_index(np.argmax(class_values), num_bins)
     sm = class_prob.transpose([0,2,1]).reshape(num_bins[0], num_bins[1]*num_bins[2]) / class_prob.sum()
-    max_values = ndi.maximum_filter(class_prob, size=5, mode='wrap')
-    
-    local_max_idxs = np.nonzero(max_values == class_prob)
-    local_max_vals = class_prob[local_max_idxs]
-    local_max_idxs = np.array(local_max_idxs).T
-
-    modes = np.concatenate([np.expand_dims(local_max_vals,axis=1), local_max_idxs], axis=1)
-    modes = np.sort(modes, axis=0)[::-1]
-    modes = modes[:num_modes, 1:].astype(int)
-
     sm_img = get_colors(sm, cmap)[:,:,:3]
     mosaic_list = []
     for j, img_slice in enumerate(np.split(sm_img, num_bins[2], axis=1)):
-        for m in modes[modes[:,2] == j]:
-            max_slice = img_slice.copy()
-            cv2.circle(max_slice, (m[1], m[0]), 2, (1,0,1), -1) 
-            img_slice = max_slice
         if j == max_idx[2]:
             max_slice = img_slice.copy()
-            cv2.circle(max_slice, (max_idx[1], max_idx[0]), 2, (0,1,0), -1) 
+            cv2.circle(max_slice, (max_idx[1], max_idx[0]), max_radius, (0,1,0), -1) 
             img_slice = max_slice
         mosaic_list.append(img_slice)
         mosaic_list.append(np.zeros((num_bins[0],1,3)))    
     
     return np.concatenate(mosaic_list[:-1], axis=1)
-
-def imageMosaicMode(class_values, num_bins, cmap = plt.cm.Blues,  filter_sigma=1, max_window = 5, num_modes=10):
+    
+#def makeProbabilityMosaic(class_values, num_bins, cmap = plt.cm.Blues, 
+#                          max_idx=True, max_color=(0,1,0), max_radius = 2, mosaic_list = None):
+#    
+#    if(mosaic_list is None):
+#        mosaic_list = imageMosaic(class_values, num_bins, cmap = plt.cm.Blues)
+#    
+#    if(max_idx is not None and max_idx == True):    
+#        max_idx = np.unravel_index(np.argmax(class_values), num_bins)
+#    
+#    if(max_idx):
+#        max_slice = mosaic_list[max_idx[2]].copy()
+#        cv2.circle(max_slice, (max_idx[1], max_idx[0]), max_radius, max_color, -1) 
+#        mosaic_list[max_idx[2]] = max_slice
+#        
+#    for img_slice in mosaic_list:
+#        mosaic_list.append(img_slice)
+#        mosaic_list.append(np.zeros((num_bins[0],1,3)))   
+    
+def makeImageMosaicModes(class_values, num_bins, cmap = plt.cm.Blues,  filter_sigma=1, max_window = 5, num_modes=10):
     class_prob = class_values.reshape(num_bins)
     max_idx = np.unravel_index(np.argmax(class_values), num_bins)
     filtered_values = ndi.filters.gaussian_filter(class_prob, sigma=filter_sigma, mode='wrap')
@@ -237,7 +255,7 @@ def imageMosaicMode(class_values, num_bins, cmap = plt.cm.Blues,  filter_sigma=1
     return np.concatenate(mosaic_list[:-1], axis=1)
 
 def index2Axis(idx, num_bins):
-    R = tf.quaternion_matrix(index2Quat(idx, num_bins))
+    R = tf_trans.quaternion_matrix(index2Quat(idx, num_bins))
     return R[0,:3], R[1,:3], R[2,:3]
     
 def makeModeImages(class_values, num_bins, filter_sigma = 1, max_window=5):
@@ -410,3 +428,176 @@ def renderAxisHistogram(class_prob, num_bins, percent_disp = 0.05, std_disp = No
     ax.imshow(H, interpolation='bilinear', origin='low', extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]])
     return fig2rgb_array(fig)
     #ax.view_init(30, angle)
+
+
+def renderTopRotations(true_values, est_values, num_bins, model_files, 
+                       disp_width = 2000, origin_quats=None, num_renders=12, 
+                       camera_dist=2):    
+   
+
+    rows = int(np.sqrt(num_renders))
+    cols = int(np.ceil(num_renders/rows))
+    
+    render_aspect_ratio = 540./960.    
+    render_width = (disp_width-cols+1)//cols
+    render_height = int(render_aspect_ratio*render_width)
+
+    mosaic_height = render_width//num_bins[2]
+    n = est_values.shape[0]
+    disp_imgs = np.zeros((n, (render_height + 2*mosaic_height + 3)*rows-1, 
+                          (render_width + 1)*cols-1, 3), dtype='float32')
+
+    for j in range(n):
+        class_prob = np.exp(est_values[0])
+        class_prob /= class_prob.sum()
+        class_cumsum = np.cumsum(class_prob)
+    
+        if(origin_quats is None):
+            origin_quats = [np.array([0,0,0,1])]
+            
+        quats = []
+        indices = []
+        probs = []    
+        
+        true_idx = np.unravel_index(np.argmax(true_values[j]), num_bins)
+        true_q = tf_trans.quaternion_multiply(index2Quat(true_idx, num_bins), origin_quats[j])
+        
+        quats.append(true_q)
+        indices.append(true_idx)
+        probs.append(class_prob[np.argmax(true_values[j])])
+        
+        max_idx = np.unravel_index(np.argmax(class_prob), num_bins)
+        max_q = tf_trans.quaternion_multiply(index2Quat(max_idx, num_bins), origin_quats[j])
+
+        quats.append(max_q)
+        indices.append(max_idx)
+        probs.append(np.max(class_prob))
+        
+        rand_samples = np.random.rand(num_renders-2)
+        for v in rand_samples:
+            k = np.nonzero(v<class_cumsum)[0][0]
+            p = class_prob[k]
+            idx = np.unravel_index(k, num_bins)
+            q = tf_trans.quaternion_multiply(index2Quat(idx, num_bins), origin_quats[j])
+            
+            quats.append(q)
+            indices.append(idx)
+            probs.append(p)
+
+        render_imgs = renderView(model_files[j], quats, camera_dist, standard_lighting=True)
+        true_mosaic_img = makeProbabilityMosaic(true_values[0], num_bins, plt.cm.Blues)
+        true_mosaic_img = cv2.resize(true_mosaic_img, (render_width, mosaic_height))
+#        est_mosaic_img = makeProbabilityMosaic(class_prob, num_bins, plt.cm.Reds, max_idx=False)
+#        est_mosaic_img = cv2.resize(est_mosaic_img, (render_width, mosaic_height))
+
+        for k, (img, q, p, idx) in enumerate(zip(render_imgs, quats, probs, indices)):
+            r = k//cols
+            c = k%cols
+            disp_mosaic_img = makeProbabilityMosaic(class_prob, num_bins, plt.cm.Reds, max_idx=idx, max_radius=6)
+            disp_mosaic_img = cv2.resize(disp_mosaic_img, (render_width, mosaic_height))
+#            target_pixel_x = int((idx[1] + idx[0]*(num_bins[1]+1)) * render_width/((num_bins[1]+1)*num_bins[2]-1))
+#            target_pixel_y = int(idx[0]*mosaic_height/num_bins[0])
+#            disp_mosaic_img = est_mosaic_img.copy()
+#            cv2.circle(disp_mosaic_img, (target_pixel_x, target_pixel_y), 6, (0,1,0), -1)
+            
+            c0 = c * (render_width + 1)
+            r0 = r * (render_height + 2*mosaic_height + 3)
+
+            disp_imgs[j,r0:r0+render_height,c0:c0+render_width,:] = cv2.resize(transparentOverlay(img), (render_width, render_height))/255.0
+            if(k == 0):
+                display_string = 'GROUND TRUTH'
+                cv2.putText(disp_imgs[j], display_string, (c0, r0+20),
+                            cv2.FONT_HERSHEY_SIMPLEX, .5, (1.0,1.0,1.0), 2)
+                cv2.putText(disp_imgs[j], display_string, (c0, r0+20),
+                            cv2.FONT_HERSHEY_SIMPLEX, .5, (0.0,0.0,0.0), 1)
+            elif(k == 1):
+                display_string = 'MAX BIN'
+                cv2.putText(disp_imgs[j], display_string, (c0, r0+20),
+                            cv2.FONT_HERSHEY_SIMPLEX, .5, (1.0,1.0,1.0), 2)
+                cv2.putText(disp_imgs[j], display_string, (c0, r0+20),
+                            cv2.FONT_HERSHEY_SIMPLEX, .5, (0.0,0.0,0.0), 1)
+                            
+            display_string = '{}: p:{:0.3e} e:{:0.3}'.format(tuple(idx), p, indexAngularDiff(idx, true_idx, num_bins))
+            cv2.putText(disp_imgs[j], display_string, (c0, r0+render_height-20),
+                        cv2.FONT_HERSHEY_SIMPLEX, .5, (1.0,1.0,1.0), 2)
+            cv2.putText(disp_imgs[j], display_string, (c0, r0+render_height-20),
+                        cv2.FONT_HERSHEY_SIMPLEX, .5, (0.0,0.0,0.0), 1)
+            axis, angle = quat2AxisAngle(index2Quat(idx, num_bins))
+            display_string = '{:.3f}, {}'.format(angle*180/np.pi, np.round(axis, 2))
+            cv2.putText(disp_imgs[j], display_string, (c0, r0+render_height-5),
+                        cv2.FONT_HERSHEY_SIMPLEX, .5, (1.0,1.0,1.0), 2)
+            cv2.putText(disp_imgs[j], display_string, (c0, r0+render_height-5),
+                        cv2.FONT_HERSHEY_SIMPLEX, .5, (0.0,0.0,0.0), 1)
+            r0 += render_height + 1
+            disp_imgs[j,r0:r0+mosaic_height,c0:c0+render_width,:] = true_mosaic_img
+            r0 += mosaic_height + 1
+            disp_imgs[j,r0:r0+mosaic_height,c0:c0+render_width,:] = disp_mosaic_img
+
+    disp_imgs = np.transpose(disp_imgs, (0,3,1,2))
+    return disp_imgs
+
+def renderQuaternions(origin_imgs, query_imgs, 
+                      true_quats, est_quats,
+                      model_files, origin_quats=None,
+                      display_width = 1250, 
+                      norm_mean = np.array([0.485, 0.456, 0.406]),
+                      norm_std = np.array([0.229, 0.224, 0.225]), 
+                      camera_dist = 2, render_gripper = True):
+
+    origin_imgs = np.transpose(origin_imgs, (0,2,3,1))
+    query_imgs = np.transpose(query_imgs, (0,2,3,1))
+    origin_imgs = np.minimum(np.maximum(origin_imgs*norm_std + norm_mean, 0.0), 1.0)
+    query_imgs = np.minimum(np.maximum(query_imgs*norm_std + norm_mean, 0.0), 1.0)
+    
+    n, h, w, c = origin_imgs.shape
+    disp_w = 3*(display_width//3)
+    disp_h = (h*disp_w)//(3*w)
+    
+    disp_imgs = np.zeros((n, disp_h, disp_w, c), dtype='float32')
+    if(render_gripper):
+        gripper_q = np.array([ 0.5,  0.5,  0.5,  0.5])
+    else:
+        gripper_q = np.array([ 0.0,  0.0,  0.0,  1.0])
+        
+    for j in range(n):
+        est_q = est_quats[j]/np.linalg.norm(est_quats[j])
+        est_q *= np.sign(est_q[3])
+        diff = quatAngularDiff(est_q, true_quats[j])
+
+        if(origin_quats is None):
+            origin_quats = [np.array([0,0,0,1])]
+
+        q = tf_trans.quaternion_multiply(origin_quats[j], gripper_q) #tf_trans.quaternion_multiply(est_q, origin_quats[j])
+        render_img = transparentOverlay(renderView(model_files[j], [q], camera_dist, standard_lighting=True)[0])/255.0
+
+        disp_imgs[j, :, :disp_w//3, :] = cv2.resize(origin_imgs[j], (disp_w//3, disp_h))
+        disp_imgs[j, :, disp_w//3:2*(disp_w//3), :] = cv2.resize(query_imgs[j], (disp_w//3, disp_h))
+        disp_imgs[j, :, 2*(disp_w//3):, :] = cv2.resize(render_img, (disp_w//3, disp_h))
+        
+        true_axis, true_angle = quat2AxisAngle(true_quats[j])
+        
+        display_string_true = '{}'.format(origin_quats[j])
+        text_height = disp_h-60
+        cv2.putText(disp_imgs[j], display_string_true, (10, text_height),
+                    cv2.FONT_HERSHEY_SIMPLEX, .5, (1.0,1.0,1.0), 2)
+        cv2.putText(disp_imgs[j], display_string_true, (10, text_height),
+                    cv2.FONT_HERSHEY_SIMPLEX, .5, (0.0,0.0,0.0), 1)        
+        
+        display_string_true = 'True Angle: {:.3f}, True Axis: {}'.format(true_angle*180/np.pi, true_axis)
+        text_height = disp_h-40
+        cv2.putText(disp_imgs[j], display_string_true, (10, text_height),
+                    cv2.FONT_HERSHEY_SIMPLEX, .5, (1.0,1.0,1.0), 2)
+        cv2.putText(disp_imgs[j], display_string_true, (10, text_height),
+                    cv2.FONT_HERSHEY_SIMPLEX, .5, (0.0,0.0,0.0), 1)
+        text_height += 20
+        
+        est_axis, est_angle = quat2AxisAngle(est_q)
+        display_string_est  = 'Est Angle:  {:.3f}, Est Axis:  {}, Error: {}'.format(est_angle*180/np.pi, est_axis, diff)
+        cv2.putText(disp_imgs[j], display_string_est, (10, text_height),
+                    cv2.FONT_HERSHEY_SIMPLEX, .5, (1.0,1.0,1.0), 2)
+        cv2.putText(disp_imgs[j], display_string_est, (10, text_height),
+                    cv2.FONT_HERSHEY_SIMPLEX, .5, (0.0,0.0,0.0), 1)
+        text_height += 20
+        
+    disp_imgs = np.transpose(disp_imgs, (0,3,1,2))
+    return disp_imgs

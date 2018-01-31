@@ -16,9 +16,9 @@ import tempfile
 import os
 import shutil
 
-from pose_renderer import renderView
-import transformations as tf
-from data_preprocessing import label2Probs, resizeAndPad, uniformRandomQuaternion, transparentOverlay, quat2Uniform, randomQuatNear
+from generic_pose.utils.pose_renderer import renderView
+import generic_pose.utils.transformations as tf_trans
+from generic_pose.utils.data_preprocessing import label2Probs, resizeAndPad, uniformRandomQuaternion, transparentOverlay, quat2Uniform, randomQuatNear
 
 from multiprocessing import Pool
 import datetime
@@ -144,7 +144,7 @@ class PoseRendererDataSet(Dataset):
             query_quat, offset_quat = randomQuatNear(origin_quat, self.max_orientation_offset)
         else:
             query_quat = uniformRandomQuaternion()
-            offset_quat = tf.quaternion_multiply(query_quat, tf.quaternion_conjugate(origin_quat))
+            offset_quat = tf_trans.quaternion_multiply(query_quat, tf_trans.quaternion_conjugate(origin_quat))
             
         u = quat2Uniform(offset_quat)
         u_bins = np.round(np.array(u)*self.class_bins)

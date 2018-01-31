@@ -9,8 +9,8 @@ import glob
 import numpy as np
 
 #import quaternions as quat
-from pose_renderer import camera2quat
-import transformations as tf
+from generic_pose.utils.pose_renderer import camera2quat
+import generic_pose.utils.transformations as tf_trans
 
 #filepath = os.path.realpath(__file__)
 #filedir = os.path.abspath(os.path.join(filepath, os.pardir))
@@ -72,7 +72,7 @@ class PoseDataSetGenerator(object):
                     q2 = model_renders[idx2]['quat']
                     fn2 = model_renders[idx2]['filename']
     
-                    dq = tf.quaternion_multiply(q1, tf.quaternion_conjugate(q2))
+                    dq = tf_trans.quaternion_multiply(q1, tf_trans.quaternion_conjugate(q2))
                     orientation_diff = 2.0*np.arccos(dq[3])
                     
                     if(orientation_diff < max_orientation_offset):

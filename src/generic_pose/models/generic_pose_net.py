@@ -10,20 +10,20 @@ import torch
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
 import torchvision.models.vgg as vgg
-import torchvision.models.alexnet as alexnet
+#import torchvision.models.alexnet as alexnet
 import torchvision.models.resnet as resnet
 
 model_urls = {
     'alexnet': 'https://download.pytorch.org/models/alexnet-owt-4df8aa71.pth',
 }
 
-class GenPoseNetDense(nn.Module):
+class GenericPoseNet(nn.Module):
 
     def __init__(self, 
                  features_classification, features_classification_size, 
                  features_regression=None, features_regression_size=0, 
                  classification_output_dims=(50,50,25)):
-        super(GenPoseNetDense, self).__init__()
+        super(GenericPoseNet, self).__init__()
         self.classification_output_dims = classification_output_dims
         self.features_classification = features_classification
         
@@ -126,7 +126,7 @@ def gen_pose_net_alexnet(pretrained=False, **kwargs):
     features_classification = AlexnetFeatures()
     features_regression = AlexnetFeatures()
     feature_size = 256 * 6 * 6
-    model = GenPoseNetDense(features_classification, feature_size, 
+    model = GenericPoseNet(features_classification, feature_size, 
                             features_regression, feature_size, **kwargs)
     if pretrained:
         
@@ -170,7 +170,7 @@ def gen_pose_net_vgg16(classification = True, regression = True, pretrained=Fals
         features_regression = None
         features_regression_size = 0
         
-    model = GenPoseNetDense(features_classification, features_classification_size,
+    model = GenericPoseNet(features_classification, features_classification_size,
                             features_regression, features_regression_size, **kwargs)
     return model
     
@@ -198,7 +198,7 @@ def gen_pose_net_resnet101(classification = True, regression = True, pretrained=
         features_regression = None
         features_regression_size = 0
         
-    model = GenPoseNetDense(features_classification, features_classification_size,
+    model = GenericPoseNet(features_classification, features_classification_size,
                             features_regression, features_regression_size, **kwargs)
 
     return model
@@ -227,7 +227,7 @@ def gen_pose_net_resnet50(classification = True, regression = True, pretrained=F
         features_regression = None
         features_regression_size = 0
         
-    model = GenPoseNetDense(features_classification, features_classification_size,
+    model = GenericPoseNet(features_classification, features_classification_size,
                             features_regression, features_regression_size, **kwargs)
 
     return model

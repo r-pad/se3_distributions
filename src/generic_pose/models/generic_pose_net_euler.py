@@ -13,13 +13,13 @@ import torchvision.models.vgg as vgg
 import torchvision.models.alexnet as alexnet
 import torchvision.models.resnet as resnet
 
-class GenPoseNet(nn.Module):
+class GenericPoseNetEuler(nn.Module):
 
     def __init__(self, 
                  features_classification, features_classification_size, 
                  features_regression, features_regression_size, 
                  classification_output_dims=(360,360,360)):
-        super(GenPoseNet, self).__init__()
+        super(GenericPoseNetEuler, self).__init__()
         
         self.features_classification = features_classification
         
@@ -131,7 +131,7 @@ def gen_pose_net_alexnet(pretrained=False, **kwargs):
     features_classification = AlexnetFeatures()
     features_regression = AlexnetFeatures()
     feature_size = 256 * 6 * 6
-    model = GenPoseNet(features_classification, feature_size, 
+    model = GenericPoseNetEuler(features_classification, feature_size, 
                        features_regression, feature_size, **kwargs)
     if pretrained:
         
@@ -176,7 +176,7 @@ def gen_pose_net_vgg16(classification = True, regression = True, pretrained=Fals
         features_regression = None
         features_regression_size = 0
         
-    model = GenPoseNet(features_classification, features_classification_size,
+    model = GenericPoseNetEuler(features_classification, features_classification_size,
                        features_regression, features_regression_size, **kwargs)
     return model
     
@@ -204,7 +204,7 @@ def gen_pose_net_resnet101(classification = True, regression = True, pretrained=
         features_regression = None
         features_regression_size = 0
         
-    model = GenPoseNet(features_classification, features_classification_size,
+    model = GenericPoseNetEuler(features_classification, features_classification_size,
                        features_regression, features_regression_size, **kwargs)
 
     return model
@@ -233,7 +233,7 @@ def gen_pose_net_resnet50(classification = True, regression = True, pretrained=F
         features_regression = None
         features_regression_size = 0
         
-    model = GenPoseNet(features_classification, features_classification_size,
+    model = GenericPoseNetEuler(features_classification, features_classification_size,
                        features_regression, features_regression_size, **kwargs)
 
     return model

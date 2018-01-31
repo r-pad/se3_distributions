@@ -7,7 +7,7 @@ Created on Mon Nov 20 19:05:43 2017
 import torch
 import numpy as np 
 
-from data_preprocessing import quatAngularDiff
+from generic_pose.utils.data_preprocessing import quatAngularDiff
 
 def quaternionLoss(preds, labels):
         """
@@ -37,6 +37,9 @@ def quaternionError(preds, labels):
     for inst_id in range(batch_size):
         est_q = est_quats[inst_id]/np.linalg.norm(est_quats[inst_id])
         est_q *= np.sign(est_q[3])
-        acc += quatAngularDiff(est_q, true_quats[inst_id])
+        diff = quatAngularDiff(est_q, true_quats[inst_id])
+        if(diff > np.pi):
+            diff = 2.0*np.pi - diff
+        acc += diff
 
     return acc/batch_size

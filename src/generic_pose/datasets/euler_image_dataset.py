@@ -12,9 +12,9 @@ from torch.utils.data import Dataset
 import glob
 
 #import quaternions as quat
-from pose_renderer import camera2quat
-import transformations as tf
-from data_preprocessing import label2Probs, resizeAndPad
+from generic_pose.utils.pose_renderer import camera2quat
+import generic_pose.utils.transformations as tf_trans
+from generic_pose.utils.data_preprocessing import label2Probs, resizeAndPad
 
 #filepath = os.path.realpath(__file__)
 #filedir = os.path.abspath(os.path.join(filepath, os.pardir))
@@ -113,8 +113,8 @@ class PoseFileDataSet(Dataset):
             origin_img = np.rollaxis(origin_img, 2)
             query_img = np.rollaxis(query_img, 2)
             
-            d_quat = tf.quaternion_multiply(query_pose, 
-                                            tf.quaternion_conjugate(origin_pose))
+            d_quat = tf_trans.quaternion_multiply(query_pose, 
+                                            tf_trans.quaternion_conjugate(origin_pose))
         
             orientation_diff = 2.0*np.arccos(d_quat[3])
             
@@ -122,8 +122,8 @@ class PoseFileDataSet(Dataset):
             if(orientation_iter > self.max_orientation_iter):
                 raise AssertionError('Orientation search exceeded max iterations {}'.format(self.max_orientation_iter))
                 
-        conj_q = torch.from_numpy(tf.quaternion_conjugate(d_quat))
-        angles = tf.euler_from_quaternion(d_quat)
+        conj_q = torch.from_numpy(tf_trans.quaternion_conjugate(d_quat))
+        angles = tf_trans.euler_from_quaternion(d_quat)
         d_euler = np.round(np.array(angles)*self.euler_bins/(2.*np.pi))
         
         d_azim = torch.from_numpy(label2Probs(d_euler[0], self.euler_bins))

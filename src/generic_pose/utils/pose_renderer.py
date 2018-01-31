@@ -16,11 +16,12 @@ if __name__ != '__main__':
 
 render_root_folder = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, render_root_folder)
-import transformations as tf
+import transformations as tf_trans
 
 blank_blend_file_path = os.path.join(render_root_folder, 'blank.blend') 
 #Should be a system variable
 blender_executable_path = '/home/bokorn/src/blender/blender-2.79-linux-glibc219-x86_64/blender'
+#blender_executable_path = 'blender'
 render_code = os.path.abspath(__file__)
 
 
@@ -129,7 +130,7 @@ def objCentenedCameraPos(dist, azimuth_deg, elevation_deg):
     z = (dist * math.sin(phi))
     return (x, y, z)
 
-def renderView(model_file, pose_quats, camera_dist, filenames = None):
+def renderView(model_file, pose_quats, camera_dist, filenames = None, standard_lighting=False):
     temp_dirname = tempfile.mkdtemp()
 
     assert filenames is None or len(pose_quats) == len(filenames), 'filenames must be None or same size as pose_quats, Expected {}, Got {}'.format(len(pose_quats), len(filenames))
@@ -152,15 +153,31 @@ def renderView(model_file, pose_quats, camera_dist, filenames = None):
         for filename in image_filenames:
             f.write('{}\n'.format(filename))
 
+    if(standard_lighting):
+        lighting_cmd = ' --light_num_lower {} --light_num_upper {}'.format(0, 0) + \
+                       ' --light_energy_mean {} --light_energy_std {} '.format(2, 0)
+                       
+    elif(False):
+        lighting_cmd = ' --light_num_lower {} --light_num_upper {}'.format(0, 0) + \
+                       ' --light_dist_lower {} --light_dist_upper {}'.format() + \
+                       ' --light_azimuth_lower {} --light_azimuth_upper {}'.format() + \
+                       ' --light_elevation_lower {} --light_elevation_upper {}'.format() + \
+                       ' --light_energy_mean {} --light_energy_std {}'.format() + \
+                       ' --light_environment_energy_lower {} --light_environment_energy_upper {} '.format()
+    else:
+        lighting_cmd = ''
+
     if(len(pose_quats) > 2):
         quats_file = temp_dirname + '/quats.npy'
         np.save(quats_file, pose_quats)
-        render_cmd = '{} {} --background --python {} -- --shape_file {} --quats_file {} --camera_dist {} --path_file {} > /dev/null 2>&1'.format(
-                blender_executable_path, blank_blend_file_path, render_code, model_file, quats_file, camera_dist, path_file)    
+        quat_cmd = '--quats_file {}'.format(quats_file)
     else:
         pose_quats = str([q.tolist() for q in pose_quats]).replace(',','').replace('[','').replace(']','')
-        render_cmd = '{} {} --background --python {} -- --shape_file {} --pos_quats {} --camera_dist {} --path_file {} > /dev/null 2>&1'.format(
-                blender_executable_path, blank_blend_file_path, render_code, model_file, pose_quats, camera_dist, path_file) 
+        quat_cmd = '--pos_quats {}'.format(pose_quats)
+        
+    render_cmd = '{} {} --background --python {} -- --shape_file {} --camera_dist {} --path_file {} {} {}> /dev/null 2>&1'.format(
+        blender_executable_path, blank_blend_file_path, render_code, model_file, camera_dist, path_file, quat_cmd, lighting_cmd)     
+
     try:
         os.system(render_cmd)
 
@@ -257,9 +274,16 @@ def main():
     for pose_num, (pos_quat, filename) in enumerate(zip(pose_quat_list, image_filenames)):
         camera_mat = np.eye(4)
         camera_mat[0,3] = args.camera_dist
-        view_mat = tf.quaternion_matrix(tf.quaternion_inverse(pos_quat)).dot(camera_mat)
+        #invert_z = np.array([[1,0,0,0],[0,1,0,0],[0,0,-1,0], [0,0,0,1]])
+        #quat_mat = tf_trans.quaternion_matrix(tf_trans.quaternion_inverse(pos_quat))
+        pos_quat[2] *= -1.0
+        quat_mat = tf_trans.quaternion_matrix(pos_quat)
+        #view_mat = quat_mat.dot(z90.dot(camera_mat))
+        #view_mat = z90.dot(quat_mat.dot(camera_mat))
+        #view_mat = quat_mat.dot(invert_z.dot(camera_mat))
+        view_mat = quat_mat.dot(camera_mat)
         cam_pos = view_mat[:3,3]              
-        cam_quat = tf.quaternion_from_matrix(view_mat)
+        cam_quat = tf_trans.quaternion_from_matrix(view_mat)
         # clear default lights
         bpy.ops.object.select_by_type(type='LAMP')
         bpy.ops.object.delete(use_global=False)
@@ -278,18 +302,13 @@ def main():
             lx, ly, lz = objCentenedCameraPos(light_dist, light_azimuth_deg, light_elevation_deg)
             bpy.ops.object.lamp_add(type='POINT', view_align = False, location=(lx, ly, lz))
             bpy.data.objects['Point'].data.energy = np.random.normal(args.light_energy_mean, args.light_energy_std)
-    
-        camera_mat = np.eye(4)
-        
-        camera_mat[0,3] = args.camera_dist
-        view_mat = tf.quaternion_matrix(tf.quaternion_inverse(pos_quat)).dot(camera_mat)
-        cam_pos = view_mat[:3,3]              
+            
         ro_mat_pre = np.array([[1,0,0],[0,0,1],[0,-1,0]])
         ro_mat_post = np.array([[0,0,1],[0,-1,0],[1,0,0]])
         cam_rot = ro_mat_pre.dot(view_mat[:3,:3].T.dot(ro_mat_post))
         cam_mat = np.eye(4)       
         cam_mat[:3,:3] = cam_rot
-        cam_quat = tf.quaternion_from_matrix(cam_mat)
+        cam_quat = tf_trans.quaternion_from_matrix(cam_mat)
         
         camObj.location[0] = cam_pos[0]
         camObj.location[1] = cam_pos[1]

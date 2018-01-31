@@ -11,7 +11,7 @@ from torch import nn
 import numpy as np
 import scipy
 
-from data_preprocessing import indexAngularDiff
+from generic_pose.utils.data_preprocessing import indexAngularDiff
 
 class ViewpointLoss(nn.Module):
     def __init__(self, mean = True):
@@ -52,7 +52,10 @@ def denseViewpointError(preds, labels, num_bins = (50, 50, 25), filter_sigma = 1
         filtered_preds = scipy.ndimage.filters.gaussian_filter(vals, sigma=filter_sigma, mode='wrap')
         pred_max_idx = np.unravel_index(np.argmax(filtered_preds), num_bins)
         label_max_idx = np.unravel_index(np.argmax(labels[inst_id, :].data.cpu().numpy()), num_bins)
-        err += indexAngularDiff(pred_max_idx, label_max_idx, num_bins)
+        diff = indexAngularDiff(pred_max_idx, label_max_idx, num_bins)
+        if(diff > np.pi):
+            diff = 2.0*np.pi - diff
+        err += diff
         idx_err += np.linalg.norm(np.array(pred_max_idx) - np.array(label_max_idx))
         
     return err/batch_size, idx_err/batch_size
