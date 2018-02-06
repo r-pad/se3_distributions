@@ -173,7 +173,7 @@ def quat2Uniform(q):
     return np.array([u1, u2, u3])
     
 def quatDiff(q1, q2):
-    return tf_trans.quaternion_multiply(q1, tf_trans.quaternion_conjugate(q2))
+    return tf_trans.quaternion_multiply(q1, tf_trans.quaternion_inverse(q2))
     
 def quatAngularDiff(q1, q2):
     q_diff = quatDiff(q1, q2)
@@ -192,6 +192,8 @@ def indexAngularDiff(idx1, idx2, num_bins):
 def quat2AxisAngle(q):
     if(q[-1] < 0):
         q *= -1 
+    if(abs(q[3])>1):
+        q[3] = np.sign(q[3])
     angle = 2*np.arccos(q[3])
     if(np.sin(angle/2.0) != 0):
         axis = q[:3]/np.sin(angle/2.0)

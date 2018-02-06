@@ -100,7 +100,7 @@ def makeEulerDisplayImages(origin_imgs, query_imgs,
                     disp_col += 1
         
             #quat_img = np.zeros(text_height, disp_w, c)
-    disp_imgs = np.transpose(disp_imgs, (0,3,1,2))
+    disp_imgs = np.flip(np.transpose(disp_imgs, (0,3,1,2)),1)
 
     return disp_imgs
     
@@ -174,7 +174,7 @@ def makeDisplayImages(origin_imgs, query_imgs,
             cv2.putText(disp_imgs[j], display_string_class, (10, text_height),
                         cv2.FONT_HERSHEY_SIMPLEX, .5, (0.0,0.0,0.0), 1)
             
-    disp_imgs = np.transpose(disp_imgs, (0,3,1,2))
+    disp_imgs = np.flip(np.transpose(disp_imgs, (0,3,1,2)),1)
 
     return disp_imgs
 
@@ -533,7 +533,7 @@ def renderTopRotations(true_values, est_values, num_bins, model_files,
             r0 += mosaic_height + 1
             disp_imgs[j,r0:r0+mosaic_height,c0:c0+render_width,:] = disp_mosaic_img
 
-    disp_imgs = np.transpose(disp_imgs, (0,3,1,2))
+    disp_imgs = np.flip(np.transpose(disp_imgs, (0,3,1,2)),1)
     return disp_imgs
 
 def renderQuaternions(origin_imgs, query_imgs, 
@@ -555,9 +555,9 @@ def renderQuaternions(origin_imgs, query_imgs,
     
     disp_imgs = np.zeros((n, disp_h, disp_w, c), dtype='float32')
     if(render_gripper):
-        gripper_q = np.array([ 0.5,  0.5,  0.5,  0.5])
+        init_q = tf_trans.quaternion_inverse(tf_trans.quaternion_about_axis(3*np.pi/4, [2,-2,1]))
     else:
-        gripper_q = np.array([ 0.0,  0.0,  0.0,  1.0])
+        init_q = np.array([ 0.0,  0.0,  0.0,  1.0])
         
     for j in range(n):
         est_q = est_quats[j]/np.linalg.norm(est_quats[j])
@@ -567,21 +567,15 @@ def renderQuaternions(origin_imgs, query_imgs,
         if(origin_quats is None):
             origin_quats = [np.array([0,0,0,1])]
 
-        q = tf_trans.quaternion_multiply(origin_quats[j], gripper_q) #tf_trans.quaternion_multiply(est_q, origin_quats[j])
-        render_img = transparentOverlay(renderView(model_files[j], [q], camera_dist, standard_lighting=True)[0])/255.0
+        #q = tf_trans.quaternion_multiply(init_q, tf_trans.quaternion_multiply(est_q, origin_quats[j]))
+        q = tf_trans.quaternion_multiply(est_q, origin_quats[j])
+        render_img = transparentOverlay(renderView(model_files[j], [tf_trans.quaternion_multiply(init_q,q)], camera_dist, standard_lighting=True)[0])/255.0
 
         disp_imgs[j, :, :disp_w//3, :] = cv2.resize(origin_imgs[j], (disp_w//3, disp_h))
         disp_imgs[j, :, disp_w//3:2*(disp_w//3), :] = cv2.resize(query_imgs[j], (disp_w//3, disp_h))
         disp_imgs[j, :, 2*(disp_w//3):, :] = cv2.resize(render_img, (disp_w//3, disp_h))
         
         true_axis, true_angle = quat2AxisAngle(true_quats[j])
-        
-        display_string_true = '{}'.format(origin_quats[j])
-        text_height = disp_h-60
-        cv2.putText(disp_imgs[j], display_string_true, (10, text_height),
-                    cv2.FONT_HERSHEY_SIMPLEX, .5, (1.0,1.0,1.0), 2)
-        cv2.putText(disp_imgs[j], display_string_true, (10, text_height),
-                    cv2.FONT_HERSHEY_SIMPLEX, .5, (0.0,0.0,0.0), 1)        
         
         display_string_true = 'True Angle: {:.3f}, True Axis: {}'.format(true_angle*180/np.pi, true_axis)
         text_height = disp_h-40
@@ -599,5 +593,5 @@ def renderQuaternions(origin_imgs, query_imgs,
                     cv2.FONT_HERSHEY_SIMPLEX, .5, (0.0,0.0,0.0), 1)
         text_height += 20
         
-    disp_imgs = np.transpose(disp_imgs, (0,3,1,2))
+    disp_imgs = np.flip(np.transpose(disp_imgs, (0,3,1,2)), 1)
     return disp_imgs
