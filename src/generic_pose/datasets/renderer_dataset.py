@@ -26,13 +26,15 @@ from itertools import repeat
 
 def pool_render(args):
     print(args[0])
-    renderView(args[0], args[1], args[2], filenames=args[3])
+    renderView(args[0], args[1], args[2], filenames=args[3], standard_lighting=args[4])
 
 class PoseRendererDataSet(Dataset):
     def __init__(self, model_filenames, img_size, 
                  background_filenames = None,
                  max_orientation_offset = None,
                  prerender = True,
+                 randomize_lighting = False,
+                 camera_dist=2,
                  num_model_imgs = 250000,
                  data_folder = None,
                  save_data = False,
@@ -44,9 +46,9 @@ class PoseRendererDataSet(Dataset):
         self.prerendered = prerender
         self.data_folder = data_folder
         self.save_data = save_data
-        
+        self.randomize_lighting = randomize_lighting
         self.model_filenames = []
-        self.camera_dist = 2
+        self.camera_dist = camera_dist
         
         self.class_bins = 360
         if(background_filenames is None):
@@ -73,7 +75,7 @@ class PoseRendererDataSet(Dataset):
                 if self.data_folder is None:
                     self.data_folder = tempfile.mkdtemp()
                 elif not os.path.exists(self.data_folder):
-                    os.mkdir(self.data_folder)
+                    os.makedirs(self.data_folder, exist_ok=True)
         
                 self.prerenderData(num_model_imgs, self.data_folder)
 
@@ -182,7 +184,7 @@ class PoseRendererDataSet(Dataset):
         render_quats.append(query_quat)
             
         # Will need to make distance random at some point
-        rendered_imgs = renderView(model_filename, render_quats, self.camera_dist)
+        rendered_imgs = renderView(model_filename, render_quats, self.camera_dist, standard_lighting=not self.randomize_lighting)
         
         origin_img = self.preprocessImages(rendered_imgs[0])
         query_img = self.preprocessImages(rendered_imgs[1])
@@ -219,7 +221,7 @@ class PoseRendererDataSet(Dataset):
         pool_render_quats = np.split(np.array(render_quats), self.per_model_workers)
         pool_image_filenames = np.split(np.array(image_filenames), self.per_model_workers)
 
-        args = zip(repeat(model_filename), pool_render_quats, repeat(self.camera_dist), pool_image_filenames)
+        args = zip(repeat(model_filename), pool_render_quats, repeat(self.camera_dist), pool_image_filenames, repeat(not self.randomize_lighting))
         for idx, return_code in enumerate(pool.imap(pool_render, args)):
             print('{} Rendering Model {} group {}'.format(datetime.datetime.now().time(), model_filename, idx))
             
@@ -229,3 +231,80 @@ class PoseRendererDataSet(Dataset):
             return len(self.data_filenames)
         else:
             return len(self.model_filenames)
+            
+
+def main():
+    from argparse import ArgumentParser
+    
+    parser = ArgumentParser()
+
+    parser.add_argument('--train_data_file', type=str, default=None)
+    parser.add_argument('--valid_data_file', type=str, default=None)
+    parser.add_argument('--background_data_file', type=str, default=None)
+    parser.add_argument('--max_orientation_offset', type=float, default=None)
+    parser.add_argument('--randomize_lighting', dest='randomize_lighting', action='store_true')
+    parser.add_argument('--camera_dist', type=float, default=2)
+
+    #parser.add_argument('--num_workers', type=int, default=4)
+    parser.add_argument('--num_render_workers', type=int, default=20)
+    #parser.add_argument('--num_render_workers', type=int, default=20)
+
+    parser.add_argument('--height', type=int, default=224)
+    parser.add_argument('--width', type=int, default=224)
+    
+    parser.add_argument('--num_train_imgs', type=int, default=50000)
+    parser.add_argument('--num_valid_imgs', type=int, default=5000)
+    parser.add_argument('--train_data_folder', type=str, default=None)
+    parser.add_argument('--valid_data_folder', type=str, default=None)
+    parser.add_argument('--random_seed', type=int, default=0)
+
+    args = parser.parse_args()
+
+    if(args.train_data_file is not None):
+        with open(args.train_data_file, 'r') as f:    
+            train_filenames = f.read().split()
+    else:
+        train_filenames = None
+    
+    if(args.valid_data_file is not None):
+        with open(args.valid_data_file, 'r') as f:    
+            valid_filenames = f.read().split()    
+    else:
+        valid_filenames = None
+        
+    if(args.background_data_file is not None):
+        with open(args.background_data_file, 'r') as f:    
+            background_filenames = f.read().split()
+    else:
+        background_filenames = None
+
+    torch.manual_seed(args.random_seed)
+    torch.cuda.manual_seed_all(args.random_seed)
+    np.random.seed(args.random_seed)
+                
+    PoseRendererDataSet(model_filenames = train_filenames,
+                        img_size = (args.width,args.height),
+                        background_filenames = background_filenames,
+                        max_orientation_offset = args.max_orientation_offset,
+                        prerender = True,
+                        randomize_lighting = args.randomize_lighting,
+                        camera_dist = args.camera_dist,                        
+                        num_model_imgs = args.num_train_imgs,
+                        data_folder = args.train_data_folder,
+                        save_data = True,
+                        num_render_workers = args.num_render_workers)
+
+    PoseRendererDataSet(model_filenames = valid_filenames,
+                        img_size = (args.width,args.height),
+                        background_filenames = background_filenames,
+                        max_orientation_offset = args.max_orientation_offset,
+                        prerender = True,
+                        randomize_lighting = args.randomize_lighting,
+                        camera_dist = args.camera_dist,
+                        num_model_imgs = args.num_valid_imgs,
+                        data_folder = args.valid_data_folder,
+                        save_data = True,
+                        num_render_workers = args.num_render_workers)
+
+if __name__=='__main__':
+    main()

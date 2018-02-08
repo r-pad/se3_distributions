@@ -155,7 +155,8 @@ def renderView(model_file, pose_quats, camera_dist, filenames = None, standard_l
 
     if(standard_lighting):
         lighting_cmd = ' --light_num_lower {} --light_num_upper {}'.format(0, 0) + \
-                       ' --light_energy_mean {} --light_energy_std {} '.format(2, 0)
+                       ' --light_energy_mean {} --light_energy_std {} '.format(2, 0) + \
+                       ' --light_environment_energy_lower {} --light_environment_energy_upper {} '.format(1.0, 1.0)
                        
     elif(False):
         lighting_cmd = ' --light_num_lower {} --light_num_upper {}'.format(0, 0) + \
