@@ -475,7 +475,11 @@ def renderTopRotations(true_values, est_values, num_bins, model_files,
         
         rand_samples = np.random.rand(num_renders-2)
         for v in rand_samples:
-            k = np.nonzero(v<class_cumsum)[0][0]
+            k = np.nonzero(v<class_cumsum)[0]
+            if(len(k) != 0):
+                k = k[0]
+            else:
+                k = class_cumsum.size-1
             p = class_prob[k]
             idx = np.unravel_index(k, num_bins)
             q = tf_trans.quaternion_multiply(index2Quat(idx, num_bins), origin_quats[j])
@@ -569,7 +573,10 @@ def renderQuaternions(origin_imgs, query_imgs,
 
         #q = tf_trans.quaternion_multiply(init_q, tf_trans.quaternion_multiply(est_q, origin_quats[j]))
         q = tf_trans.quaternion_multiply(est_q, origin_quats[j])
-        render_img = transparentOverlay(renderView(model_files[j], [tf_trans.quaternion_multiply(init_q,q)], camera_dist, standard_lighting=True)[0])/255.0
+        render_img = renderView(model_files[j], [tf_trans.quaternion_multiply(init_q,q)], camera_dist, standard_lighting=True)
+        if(len(render_img) == 0):
+            continue;
+        render_img = transparentOverlay(render_img[0])/255.0
 
         disp_imgs[j, :, :disp_w//3, :] = cv2.resize(origin_imgs[j], (disp_w//3, disp_h))
         disp_imgs[j, :, disp_w//3:2*(disp_w//3), :] = cv2.resize(query_imgs[j], (disp_w//3, disp_h))
