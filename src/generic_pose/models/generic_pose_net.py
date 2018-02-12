@@ -193,7 +193,7 @@ def gen_pose_net_resnet101(classification = True, regression = True, pretrained=
         resnet_regression = resnet.resnet101(pretrained=pretrained)
         lst_regression = [elem for elem in resnet_regression.children()]
         features_regression = torch.nn.Sequential(*lst_regression[:-1])
-        features_regression_size = lst_classification[-1].in_features
+        features_regression_size = lst_regression[-1].in_features
     else:
         features_regression = None
         features_regression_size = 0
@@ -222,7 +222,65 @@ def gen_pose_net_resnet50(classification = True, regression = True, pretrained=F
         resnet_regression = resnet.resnet50(pretrained=pretrained)
         lst_regression = [elem for elem in resnet_regression.children()]
         features_regression = torch.nn.Sequential(*lst_regression[:-1])
-        features_regression_size = lst_classification[-1].in_features
+        features_regression_size = lst_regression[-1].in_features
+    else:
+        features_regression = None
+        features_regression_size = 0
+        
+    model = GenericPoseNet(features_classification, features_classification_size,
+                            features_regression, features_regression_size, **kwargs)
+
+    return model
+    
+def gen_pose_net_resnet34(classification = True, regression = True, pretrained=False, **kwargs):
+    """Constructs a ResNet-34 model.
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+    """
+
+    if(classification):
+        resnet_classification = resnet.resnet34(pretrained=pretrained)
+        lst_classification = [elem for elem in resnet_classification.children()]
+        features_classification = torch.nn.Sequential(*lst_classification[:-1])
+        features_classification_size = lst_classification[-1].in_features
+    else:
+        features_classification = None
+        features_classification_size = 0
+        
+    if(regression):
+        resnet_regression = resnet.resnet34(pretrained=pretrained)
+        lst_regression = [elem for elem in resnet_regression.children()]
+        features_regression = torch.nn.Sequential(*lst_regression[:-1])
+        features_regression_size = lst_regression[-1].in_features
+    else:
+        features_regression = None
+        features_regression_size = 0
+        
+    model = GenericPoseNet(features_classification, features_classification_size,
+                            features_regression, features_regression_size, **kwargs)
+
+    return model
+    
+def gen_pose_net_resnet18(classification = True, regression = True, pretrained=False, **kwargs):
+    """Constructs a ResNet-18 model.
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+    """
+
+    if(classification):
+        resnet_classification = resnet.resnet18(pretrained=pretrained)
+        lst_classification = [elem for elem in resnet_classification.children()]
+        features_classification = torch.nn.Sequential(*lst_classification[:-1])
+        features_classification_size = lst_classification[-1].in_features
+    else:
+        features_classification = None
+        features_classification_size = 0
+        
+    if(regression):
+        resnet_regression = resnet.resnet18(pretrained=pretrained)
+        lst_regression = [elem for elem in resnet_regression.children()]
+        features_regression = torch.nn.Sequential(*lst_regression[:-1])
+        features_regression_size = lst_regression[-1].in_features
     else:
         features_regression = None
         features_regression_size = 0

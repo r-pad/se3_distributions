@@ -109,7 +109,7 @@ class PoseTrainer(object):
             
             if(disp_metrics):
                 err_quat = quaternionError(quat_est, quat_true)
-                results['err_quat'] = err_quat
+                results['err_quat'] = err_quat*180.0/np.pi
                 results['mean_origin_features_regression'] = np.mean(np.abs(to_np(origin_features_regression)))
                 results['mean_query_features_regression'] = np.mean(np.abs(to_np(query_features_regression)))
 
@@ -129,7 +129,7 @@ class PoseTrainer(object):
             results['loss_binned'] = loss_binned.data[0]
             if(disp_metrics):
                 err_binned, err_idx = denseViewpointError(class_est, class_true, self.num_bins)            
-                results['err_binned'] = err_binned
+                results['err_binned'] = err_binned*180.0/np.pi
                 results['err_idx'] = err_idx
                 results['mean_origin_features_classification'] = np.mean(np.abs(to_np(origin_features_classification)))
                 results['mean_query_features_classification'] = np.mean(np.abs(to_np(query_features_classification)))        
@@ -332,7 +332,12 @@ class PoseTrainer(object):
 def main():
     import datetime
     from argparse import ArgumentParser
-    from generic_pose.models.generic_pose_net import gen_pose_net_alexnet, gen_pose_net_vgg16, gen_pose_net_resnet101, gen_pose_net_resnet50
+    from generic_pose.models.generic_pose_net import (gen_pose_net_alexnet, 
+                                                      gen_pose_net_vgg16, 
+                                                      gen_pose_net_resnet101, 
+                                                      gen_pose_net_resnet50,
+                                                      gen_pose_net_resnet34,
+                                                      gen_pose_net_resnet18)
     
     parser = ArgumentParser()
 
@@ -343,7 +348,8 @@ def main():
     parser.add_argument('--model_data_file', type=str, default=None)
     parser.add_argument('--background_data_file', type=str, default=None)
 
-    parser.add_argument('--robot', dest='robot', action='store_true')
+    parser.add_argument('--single_model', dest='single_model', action='store_true')
+    parser.add_argument('--render_distance', type=float, default=2.0)
 
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--num_workers', type=int, default=4)
@@ -360,7 +366,6 @@ def main():
     parser.add_argument('--random_init', dest='pretrained', action='store_false')    
     
     parser.add_argument('--random_seed', type=int, default=0)
-
 
     parser.add_argument('--results_dir', type=str, default='results/') 
     parser.add_argument('--num_epochs', type=int, default=100000)
@@ -380,21 +385,23 @@ def main():
     else:
         valid_data_folders = args.valid_data_folders
     
-    render_distance = 2
+    render_distance = args.render_distance
     if(args.model_data_file is not None):
-        if(args.robot):
-            render_distance = 0.5
+        if(args.single_model):
             model_filenames = args.model_data_file
             
         else:
             model_filenames = {}
-            with open(args.model_data_file, 'r') as f:    
-                filenames = f.read().split()
-                for path in filenames:
-                    model = path.split('/')[-2]
-                    model_filenames[model] = path
-            
+            if(args.model_data_file[-4:] == '.txt'):
+                with open(args.model_data_file, 'r') as f:    
+                    filenames = f.read().split()
+            else:
+                filenames = [args.model_data_file]
 
+            for path in filenames:
+                model = path.split('/')[-2]
+                model_filenames[model] = path
+            
     else:
         model_filenames = None
 
@@ -436,6 +443,14 @@ def main():
                                        pretrained = args.pretrained)
     elif(args.model_type.lower() == 'resnet50'):
         model = gen_pose_net_resnet50(classification = args.classification, 
+                                      regression = args.regression, 
+                                      pretrained = args.pretrained)
+    elif(args.model_type.lower() == 'resnet34'):
+        model = gen_pose_net_resnet34(classification = args.classification, 
+                                      regression = args.regression, 
+                                      pretrained = args.pretrained)
+    elif(args.model_type.lower() == 'resnet18'):
+        model = gen_pose_net_resnet18(classification = args.classification, 
                                       regression = args.regression, 
                                       pretrained = args.pretrained)
     else:
