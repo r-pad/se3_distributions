@@ -130,7 +130,8 @@ def objCentenedCameraPos(dist, azimuth_deg, elevation_deg):
     z = (dist * math.sin(phi))
     return (x, y, z)
 
-def renderView(model_file, pose_quats, camera_dist, filenames = None, standard_lighting=False):
+def renderView(model_file, pose_quats, camera_dist, filenames = None, 
+               standard_lighting=False, debug_mode=False):
     temp_dirname = tempfile.mkdtemp()
 
     assert filenames is None or len(pose_quats) == len(filenames), 'filenames must be None or same size as pose_quats, Expected {}, Got {}'.format(len(pose_quats), len(filenames))
@@ -153,10 +154,15 @@ def renderView(model_file, pose_quats, camera_dist, filenames = None, standard_l
         for filename in image_filenames:
             f.write('{}\n'.format(filename))
 
+    if(debug_mode):
+        debug_cmd = ''
+    else:
+        debug_cmd = '> /dev/null 2>&1'
+
     if(standard_lighting):
-        lighting_cmd = ' --light_num_lower {} --light_num_upper {}'.format(0, 0) + \
-                       ' --light_energy_mean {} --light_energy_std {} '.format(2, 0) + \
-                       ' --light_environment_energy_lower {} --light_environment_energy_upper {} '.format(1.0, 1.0)
+        lighting_cmd = ' --light_num_lower {} --light_num_upper {}'.format(10, 10) + \
+                       ' --light_energy_mean {} --light_energy_std {} '.format(2, 1e-100) + \
+                       ' --light_environment_energy_lower {} --light_environment_energy_upper {} '.format(10.0, 10.0)
                        
     elif(False):
         lighting_cmd = ' --light_num_lower {} --light_num_upper {}'.format(0, 0) + \
@@ -176,8 +182,8 @@ def renderView(model_file, pose_quats, camera_dist, filenames = None, standard_l
         pose_quats = str([q.tolist() for q in pose_quats]).replace(',','').replace('[','').replace(']','')
         quat_cmd = '--pos_quats {}'.format(pose_quats)
         
-    render_cmd = '{} {} --background --python {} -- --shape_file {} --camera_dist {} --path_file {} {} {}> /dev/null 2>&1'.format(
-        blender_executable_path, blank_blend_file_path, render_code, model_file, camera_dist, path_file, quat_cmd, lighting_cmd)     
+    render_cmd = '{} {} --background --python {} -- --shape_file {} --camera_dist {} --path_file {} {} {} {}'.format(
+        blender_executable_path, blank_blend_file_path, render_code, model_file, camera_dist, path_file, quat_cmd, lighting_cmd, debug_cmd)     
 
     try:
         os.system(render_cmd)
@@ -229,6 +235,18 @@ def main():
 
     import bpy
     # Input parameters
+
+    C = bpy.context
+    cycles_prefs = C.user_preferences.addons['cycles'].preferences
+    
+    C.scene.render.use_overwrite = False
+    C.scene.render.use_placeholder = True
+    cycles_prefs.compute_device_type = "CUDA"
+    C.user_preferences.compute_device_type = "CUDA"
+    for device in cycles_prefs.devices:
+        device.use = False
+    
+    cycles_prefs.devices[0].use = True
 
     bpy.context.scene.cycles.device = 'GPU'
     bpy.ops.import_scene.obj(filepath=args.shape_file) 
