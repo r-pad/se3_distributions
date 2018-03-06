@@ -8,14 +8,14 @@ import glob
 import numpy as np
 
 class ModelDataSetGenerator(object):
-    def __init__(self, data_dir):
+    def __init__(self, data_dir, obj_dir_depth = 0):
         self.data_dir = data_dir
         self.data_dict = {}
 
         files = glob.glob(self.data_dir + '/**/*.obj', recursive=True)
             
         for filename in files:
-            [model_class, model, model_file] = filename.split('/')[-3:]
+            [model_class, model] = filename.split('/')[(-3-obj_dir_depth):(-1-obj_dir_depth)]
 
             if(model_class not in self.data_dict):
                 self.data_dict[model_class] = {}
@@ -58,7 +58,7 @@ class ModelDataSetGenerator(object):
         class_names = np.array(list(self.data_dict.keys()))   
         np.random.shuffle(class_names)
          
-        split_idx = np.ceil(train_ratio*class_names).astype(int)
+        split_idx = np.ceil(train_ratio*num_classes).astype(int)
          
         train_classes = class_names[:split_idx]
         valid_classes = class_names[split_idx:num_classes]
