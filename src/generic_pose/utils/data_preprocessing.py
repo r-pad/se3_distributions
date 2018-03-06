@@ -173,7 +173,11 @@ def quat2Uniform(q):
     return np.array([u1, u2, u3])
     
 def quatDiff(q1, q2):
-    return tf_trans.quaternion_multiply(q1, tf_trans.quaternion_inverse(q2))
+    q_diff = tf_trans.quaternion_multiply(q1, tf_trans.quaternion_inverse(q2))
+    if(q_diff[-1] < 0):
+        q_diff *= -1.0
+    return q_diff
+            
     
 def quatAngularDiff(q1, q2):
     q_diff = quatDiff(q1, q2)

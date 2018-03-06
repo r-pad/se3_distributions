@@ -521,7 +521,7 @@ def renderTopRotations(true_values, est_values, num_bins, model_files,
                 cv2.putText(disp_imgs[j], display_string, (c0, r0+20),
                             cv2.FONT_HERSHEY_SIMPLEX, .5, (0.0,0.0,0.0), 1)
                             
-            display_string = '{}: p:{:0.3e} e:{:0.3}'.format(tuple(idx), p, indexAngularDiff(idx, true_idx, num_bins))
+            display_string = '{}: p:{:0.3e} e:{:0.3}'.format(tuple(idx), p, indexAngularDiff(idx, true_idx, num_bins)*180/np.pi)
             cv2.putText(disp_imgs[j], display_string, (c0, r0+render_height-20),
                         cv2.FONT_HERSHEY_SIMPLEX, .5, (1.0,1.0,1.0), 2)
             cv2.putText(disp_imgs[j], display_string, (c0, r0+render_height-20),
@@ -593,7 +593,7 @@ def renderQuaternions(origin_imgs, query_imgs,
         text_height += 20
         
         est_axis, est_angle = quat2AxisAngle(est_q)
-        display_string_est  = 'Est Angle:  {:.3f}, Est Axis:  {}, Error: {}'.format(est_angle*180/np.pi, est_axis, diff)
+        display_string_est  = 'Est Angle:  {:.3f}, Est Axis:  {}, Error: {}'.format(est_angle*180/np.pi, est_axis, diff*180/np.pi)
         cv2.putText(disp_imgs[j], display_string_est, (10, text_height),
                     cv2.FONT_HERSHEY_SIMPLEX, .5, (1.0,1.0,1.0), 2)
         cv2.putText(disp_imgs[j], display_string_est, (10, text_height),
