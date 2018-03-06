@@ -10,7 +10,6 @@ from logger import Logger
 import torch
 import numpy as np
 
-import torch.optim as optim
 from torch.autograd import Variable
 from torch.optim import Adam, Adadelta, SGD
 from torch.utils.data import DataLoader
@@ -18,22 +17,13 @@ from torch.utils.data import DataLoader
 import os
 
 from generic_pose.datasets.image_dataset import PoseImageDataSet
+from generic_pose.datasets.image_pair_dataset import PoseImagePairsDataSet
 
 from generic_pose.losses.viewpoint_loss import ViewpointLoss, denseViewpointError
 from generic_pose.losses.quaternion_loss import quaternionLoss, quaternionError
 from generic_pose.utils.display_pose import makeDisplayImages, renderTopRotations, renderQuaternions
+from generic_pose.training.utils import to_np, to_var, evaluatePairReg, evaluatePairCls, evaluateLoopReg
     
-def to_np(x):
-    if torch.is_tensor(x):
-        return x.cpu().numpy()
-    else:
-        return x.data.cpu().numpy()
-
-def to_var(x):
-    if torch.cuda.is_available():
-        x = x.cuda()
-    return Variable(x)    
-
 class PoseTrainer(object):
     def __init__(self, 
                  train_data_folders,
@@ -44,6 +34,7 @@ class PoseTrainer(object):
                  model_filenames = None,
                  background_filenames = None,
                  classification = True,
+                 locked_pairs = False,
                  num_bins = (50,50,25),
                  distance_sigma = 0.1,
                  render_distance = 2,
@@ -56,88 +47,33 @@ class PoseTrainer(object):
         self.img_size = img_size
         self.class_loss = ViewpointLoss()
         self.render_distance = render_distance
-        self.train_loader = DataLoader(PoseImageDataSet(data_folders=train_data_folders,
-                                                        img_size = img_size,
-                                                        model_filenames=model_filenames,
-                                                        background_filenames = background_filenames,
-                                                        classification = classification,
-                                                        num_bins=self.num_bins,
-                                                        distance_sigma=distance_sigma),
+        self.classification = classification
+        if(locked_pairs):
+            DataSet = PoseImagePairsDataSet
+        else:
+            DataSet = PoseImageDataSet
+            
+        self.train_loader = DataLoader(DataSet(data_folders=train_data_folders,
+                                               img_size = img_size,
+                                               model_filenames=model_filenames,
+                                               background_filenames = background_filenames,
+                                               classification = self.classification,
+                                               num_bins=self.num_bins,
+                                               distance_sigma=distance_sigma),
                                        num_workers=batch_size, 
                                        batch_size=batch_size, 
                                        shuffle=True)
     
-        self.valid_loader = DataLoader(PoseImageDataSet(data_folders=valid_data_folders,
-                                                        img_size = img_size,
-                                                        model_filenames=model_filenames,
-                                                        background_filenames = background_filenames,
-                                                        classification = classification,
-                                                        num_bins=self.num_bins,
-                                                        distance_sigma=distance_sigma),
+        self.valid_loader = DataLoader(DataSet(data_folders=valid_data_folders,
+                                               img_size = img_size,
+                                               model_filenames=model_filenames,
+                                               background_filenames = background_filenames,
+                                               classification = self.classification,
+                                               num_bins=self.num_bins,
+                                               distance_sigma=distance_sigma),
                                        num_workers=num_workers, 
                                        batch_size=batch_size, 
                                        shuffle=True)
-    
-    def evaluateModel(self, model, origin, query, 
-                      quat_true, class_true,
-                      backward=True, disp_metrics=False):
-
-        origin = to_var(origin)
-        query = to_var(query)
-        quat_true = to_var(quat_true)
-        class_true = to_var(class_true)
-
-        results = {}
-
-        if(backward):
-            self.optimizer.zero_grad()
-            
-        if(model.features_regression is not None):
-            origin_features_regression = model.featuresRegression(origin)
-            query_features_regression = model.featuresRegression(query)
-            quat_est = model.compareRegression(origin_features_regression, 
-                                               query_features_regression)
-
-            loss_quat = quaternionLoss(quat_est, quat_true)
-            
-
-            if(backward):
-                loss_quat.backward(retain_graph=True)
-
-            results['quat_est'] = quat_est
-            results['loss_quat'] = loss_quat.data[0]
-            
-            if(disp_metrics):
-                err_quat = quaternionError(quat_est, quat_true)
-                results['err_quat'] = err_quat*180.0/np.pi
-                results['mean_origin_features_regression'] = np.mean(np.abs(to_np(origin_features_regression)))
-                results['mean_query_features_regression'] = np.mean(np.abs(to_np(query_features_regression)))
-
-        if(model.features_classification is not None):
-            origin_features_classification = model.featuresClassification(origin)
-            query_features_classification = model.featuresClassification(query)
-            class_est = model.compareClassification(origin_features_classification,
-                                                    query_features_classification)
-            
-            loss_binned = self.class_loss(class_est, class_true)
-            
-
-            if(backward):
-                loss_binned.backward()
-        
-            results['class_est'] = class_est
-            results['loss_binned'] = loss_binned.data[0]
-            if(disp_metrics):
-                err_binned, err_idx = denseViewpointError(class_est, class_true, self.num_bins)            
-                results['err_binned'] = err_binned*180.0/np.pi
-                results['err_idx'] = err_idx
-                results['mean_origin_features_classification'] = np.mean(np.abs(to_np(origin_features_classification)))
-                results['mean_query_features_classification'] = np.mean(np.abs(to_np(query_features_classification)))        
-        
-        if(backward):
-            self.optimizer.step()
-
-        return results
     
     def train(self, model, results_dir, 
               num_epochs = 100000,
@@ -188,17 +124,29 @@ class PoseTrainer(object):
 
         for epoch_idx in range(1, num_epochs+1):
             for batch_idx, (origin, query, quat_true, class_true, origin_quat, model_file) in enumerate(self.train_loader):
-                loq_data = not((cumulative_batch_idx+1) % log_every_nth)
-                train_results = self.evaluateModel(model, origin, query, 
-                                                   quat_true, class_true,
-                                                   backward=True, disp_metrics = loq_data)
-                      
-                if loq_data:
+                log_data = not((cumulative_batch_idx+1) % log_every_nth)
+                if(self.classification):
+                    train_results = evaluatePairCls(model, origin, query, class_true,
+                                                    num_bins = self.num_bins,
+                                                    optimizer = self.optimizer, 
+                                                    disp_metrics = log_data)
+                else:
+                    train_results = evaluatePairReg(model, origin, query, quat_true,
+                                                    optimizer = self.optimizer, 
+                                                    disp_metrics = log_data)
+                                                    
+                if log_data:
                     v_origin, v_query, v_quat_true, v_class_true, v_origin_quat, v_model_file = next(iter(self.valid_loader))
                     
-                    valid_results = self.evaluateModel(model, v_origin, v_query, 
-                                                       v_quat_true, v_class_true,
-                                                       backward=False, disp_metrics=True)
+                    if(self.classification):
+                        valid_results = evaluatePairCls(model, v_origin, v_query, v_class_true,
+                                                        num_bins = self.num_bins,
+                                                        optimizer = None, 
+                                                        disp_metrics = True)
+                    else:
+                        valid_results = evaluatePairReg(model, v_origin, v_query, v_quat_true,
+                                                        optimizer = None, 
+                                                        disp_metrics = True)
                     
                     print("epoch {} :: cumulative_batch_idx {}".format(epoch_idx, cumulative_batch_idx + 1))
                     
@@ -262,15 +210,15 @@ class PoseTrainer(object):
 
                     
                     valid_origin_imgs = to_np(v_origin.view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
-                    valid_query_imgs = to_np(v_query.view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
-                    valid_quat_true = to_np(v_quat_true[:num_display_imgs])
+                    valid_query_imgs  = to_np(v_query.view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
+                    valid_quat_true   = to_np(v_quat_true[:num_display_imgs])
                     
                     if('quat_est' in valid_results):
                         valid_quat_est = to_np(valid_results['quat_est'][:num_display_imgs])
                         valid_render_imgs = renderQuaternions(valid_origin_imgs, valid_query_imgs, 
                                                               valid_quat_true, valid_quat_est,
                                                               origin_quats = v_origin_quat[:num_display_imgs],
-                                                              model_files=v_model_file[:num_display_imgs],
+                                                              model_files = v_model_file[:num_display_imgs],
                                                               camera_dist = self.render_distance)
                     else:
                         valid_quat_est = None
@@ -332,12 +280,7 @@ class PoseTrainer(object):
 def main():
     import datetime
     from argparse import ArgumentParser
-    from generic_pose.models.generic_pose_net import (gen_pose_net_alexnet, 
-                                                      gen_pose_net_vgg16, 
-                                                      gen_pose_net_resnet101, 
-                                                      gen_pose_net_resnet50,
-                                                      gen_pose_net_resnet34,
-                                                      gen_pose_net_resnet18)
+    from generic_pose.models.pose_networks import gen_pose_net
     
     parser = ArgumentParser()
 
@@ -348,6 +291,7 @@ def main():
     parser.add_argument('--model_data_file', type=str, default=None)
     parser.add_argument('--background_data_file', type=str, default=None)
 
+    parser.add_argument('--locked_pairs', dest='locked_pairs', action='store_true')
     parser.add_argument('--single_model', dest='single_model', action='store_true')
     parser.add_argument('--render_distance', type=float, default=2.0)
 
@@ -360,9 +304,10 @@ def main():
     parser.add_argument('--lr', type=float, default=1e-5)
     parser.add_argument('--optimizer', type=str, default='Adam')
     
-    parser.add_argument('--model_type', type=str, default='resnet101')
-    parser.add_argument('--train_classification', dest='classification', action='store_true')
-    parser.add_argument('--train_regression', dest='regression', action='store_true')
+    parser.add_argument('--model_type', type=str, default='vgg16')
+    parser.add_argument('--compare_type', type=str, default='basic')
+    parser.add_argument('--output_type', type=str, default='regression')
+
     parser.add_argument('--random_init', dest='pretrained', action='store_false')    
     
     parser.add_argument('--random_seed', type=int, default=0)
@@ -372,6 +317,11 @@ def main():
     parser.add_argument('--log_every_nth', type=int, default=50)
 
     args = parser.parse_args()
+
+    assert args.output_type.lower() in ['regression', 'classification'], \
+        'Invalid output_type {}, Must be regression or classification'.format(args.output_type.lower())
+
+    classification = args.output_type.lower() == 'classification'
 
     if(args.train_data_folders[-4:] == '.txt'):
         with open(args.train_data_folders, 'r') as f:    
@@ -411,6 +361,7 @@ def main():
     else:
         background_filenames = None
 
+    num_bins = (50,50,25)
     trainer = PoseTrainer(train_data_folders = train_data_folders,
                           valid_data_folders = valid_data_folders,
                           img_size = (args.width,args.height),
@@ -418,8 +369,9 @@ def main():
                           num_workers = args.num_workers,
                           model_filenames = model_filenames,
                           background_filenames = background_filenames,
-                          classification = args.classification, 
-                          num_bins = (50,50,25),
+                          locked_pairs = args.locked_pairs,
+                          classification = classification, 
+                          num_bins = num_bins,
                           distance_sigma = args.distance_sigma, 
                           seed = args.random_seed,
                           render_distance = render_distance)
@@ -431,30 +383,15 @@ def main():
     if args.weight_file is not None:
         args.pretrained = False
 
-    if(args.model_type.lower() == 'alexnet'):
-        model = gen_pose_net_alexnet(pretrained=args.pretrained)
-    elif(args.model_type.lower() == 'vgg'):
-        model = gen_pose_net_vgg16(classification = args.classification, 
-                                   regression = args.regression, 
-                                   pretrained = args.pretrained)
-    elif(args.model_type.lower() == 'resnet101'):
-        model = gen_pose_net_resnet101(classification = args.classification, 
-                                       regression = args.regression, 
-                                       pretrained = args.pretrained)
-    elif(args.model_type.lower() == 'resnet50'):
-        model = gen_pose_net_resnet50(classification = args.classification, 
-                                      regression = args.regression, 
-                                      pretrained = args.pretrained)
-    elif(args.model_type.lower() == 'resnet34'):
-        model = gen_pose_net_resnet34(classification = args.classification, 
-                                      regression = args.regression, 
-                                      pretrained = args.pretrained)
-    elif(args.model_type.lower() == 'resnet18'):
-        model = gen_pose_net_resnet18(classification = args.classification, 
-                                      regression = args.regression, 
-                                      pretrained = args.pretrained)
+    if(classification):
+        output_dim = num_bins
     else:
-        raise AssertionError('Model type {} not supported, alexnet, vgg and resnet are only valid types'.format(args.model_type))
+        output_dim = 4
+    
+    model = gen_pose_net(args.model_type.lower(), 
+                         args.compare_type.lower(), 
+                         output_dim = output_dim,
+                         pretrained = args.pretrained)
 
     if args.weight_file is not None:
         model.load_state_dict(torch.load(args.weight_file))
