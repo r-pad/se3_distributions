@@ -22,9 +22,14 @@ import glob
 
 from generic_pose.utils.data_preprocessing import label2DenseWeights, quat2Uniform, resizeAndPad, transparentOverlay
 
+_datasets_dir = os.path.dirname(os.path.abspath(__file__))
+
 class PoseImagePairsDataSet(Dataset):
-    def __init__(self, img_size, data_folder,
+    def __init__(self, data_folders,
+                 img_size, 
+                 model_filenames = None,
                  background_filenames = None,
+                 classification = True,
                  num_bins = (100,100,50),
                  distance_sigma = 5,
                  num_model_imgs = 250000):
@@ -32,25 +37,30 @@ class PoseImagePairsDataSet(Dataset):
         super(PoseImagePairsDataSet, self).__init__()
         
         self.img_size = img_size
+        
+        self.classification = classification
         self.num_bins = num_bins
         self.distance_sigma = distance_sigma
-        self.data_folder = data_folder
         
-        self.model_filenames = []
-        self.camera_dist = 2
-        
+        self.model_filenames = model_filenames
+        self.background_filenames = background_filenames
         self.class_bins = (100, 100, 50)
-        if(background_filenames is None):
-            self.background_filenames = []
-        else:
-            self.background_filenames = background_filenames
+        self.background_filenames = background_filenames
+        self.class_bins = num_bins
                 
         self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                               std=[0.229, 0.224, 0.225])
         self.to_tensor = transforms.ToTensor()
 
-        files = glob.glob(self.data_folder + '/**/*.npz', recursive=True)
-        
+        if(type(data_folders) is list):
+            files = []
+            for folder in data_folders:
+                files.extend(glob.glob(folder + '/**/*.npz', recursive=True))
+        elif(type(data_folders) is str):
+            files = glob.glob(data_folders + '/**/*.npz', recursive=True)
+        else:
+            raise AssertionError('Invalid data_folders type {}'.format(type(data_folders)))
+            
         self.data_filenames = []
         for filename in files:
             self.data_filenames.append('.'.join(filename.split('.')[:-1]))
@@ -66,11 +76,23 @@ class PoseImagePairsDataSet(Dataset):
         offset_quat = npzfile['offset_quat']
         offset_u = quat2Uniform(offset_quat)
         origin_quat = np.load(self.data_filenames[index] + '_origin.npy')
+        query_quat = np.load(self.data_filenames[index] + '_query.npy')
         
         #Need to fix this
         model_class, model_name = self.data_filenames[index].split('/')[-1].split('_')[:2]
-        model_file = os.path.join('/media/bokorn/ExtraDrive1/shapenetcore', model_class, model_name, 'model.obj')
-        offset_class = label2DenseWeights(offset_u, (self.num_bins[0],self.num_bins[1],self.num_bins[2]), self.distance_sigma)
+#
+#        if(type(self.model_filenames) is dict):
+#            model_file = self.model_filenames[model]
+#        elif
+        if(type(self.model_filenames) is str):
+            model_file = self.model_filenames
+        else:
+            model_file = os.join(_datasets_dir, 'jet.obj')
+        
+        if(self.classification):
+            offset_class = label2DenseWeights(offset_u, (self.num_bins[0],self.num_bins[1],self.num_bins[2]), self.distance_sigma)
+        else:
+            offset_class = np.zeros(1)
         #offset_w = npzfile['offset_w']
     
         origin_img = self.preprocessImages(origin_img)
@@ -82,12 +104,11 @@ class PoseImagePairsDataSet(Dataset):
         offset_quat = torch.from_numpy(offset_quat)
         offset_class = torch.from_numpy(offset_class)
                                       
-        return origin_img, query_img, offset_quat, offset_class, origin_quat, model_file
+        return origin_img, query_img, offset_quat, offset_class, origin_quat, model_file, query_quat
  
     def preprocessImages(self, image):
-        num_background_files = len(self.background_filenames)
-        if(num_background_files  > 0):
-            bg_idx = np.random.randint(0, num_background_files)
+        if(self.background_filenames is not None):
+            bg_idx = np.random.randint(0, len(self.background_filenames))
             background = cv2.imread(self.background_filenames[bg_idx])
         else:
             background = None
