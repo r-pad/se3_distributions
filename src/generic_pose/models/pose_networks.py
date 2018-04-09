@@ -28,7 +28,7 @@ class GenericPoseNet(nn.Module):
 
         return self.compare_network(origin, query)
 
-def gen_pose_net(feature_type, compare_type, output_dim = 4, pretrained = True):
+def gen_pose_net(feature_type, compare_type, output_dim = 4, pretrained = True, fix_features = False):
     
     assert feature_type in feature_networks.keys(), 'Invalid feature type {}, Must be in {}'.format(feature_type, feature_networks.keys())
     feature_net, feature_size = feature_networks[feature_type](pretrained = pretrained)
@@ -37,5 +37,9 @@ def gen_pose_net(feature_type, compare_type, output_dim = 4, pretrained = True):
     compare_net = compare_networks[compare_type](feature_size, output_dim)
     
     model = GenericPoseNet(feature_net, compare_net)
+    
+    if(fix_features):
+       for p in model.feature_network.parameters():
+           p.requires_grad=False
     
     return model

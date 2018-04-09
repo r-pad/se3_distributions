@@ -13,6 +13,8 @@ import torchvision.models.vgg as vgg
 import torchvision.models.resnet as resnet
 from functools import partial
 
+from collections import OrderedDict
+
 model_urls = {
     'alexnet': 'https://download.pytorch.org/models/alexnet-owt-4df8aa71.pth',
 }
@@ -87,7 +89,31 @@ def resnet_features(pretrained=False, version = 101, **kwargs):
     feature_size = features_lst[-1].in_features
         
     return feature_network, feature_size
-    
+
+class LinearFeatureNet(nn.Module):
+    def __init__(self, conv_network, conv_outsize, linear_layers = [2048, 2048]):
+        super(LinearFeatureNet, self).__init__()
+        self.conv_network = conv_network
+        ls_prev = conv_outsize
+        layers = []
+        for j, ls in enumerate(linear_layers):
+            layers.append(('fc{}'.format(j+1), torch.nn.Linear(ls_prev, ls)))
+            layers.append(('relu{}'.format(j+1), torch.nn.ReLU(inplace=True)))
+            ls_prev = ls
+        
+        self.linear = nn.Sequential(OrderedDict(layers))
+
+    def forward(self, x):
+        x = self.conv_network(x)
+        x = x.view(x.size(0), -1)
+        return self.linear(x)
+        
+def linear_features(convnet_generator, linear_layers = [2048, 2048], **kwargs):
+    conv_network, outsize = convnet_generator(**kwargs)
+    feature_network = LinearFeatureNet(conv_network, outsize, 
+                                       linear_layers = linear_layers)
+    return feature_network, linear_layers[-1]
+
 feature_networks = {
                     'alexnet':alexnet_features,
                     'vgg16':vgg16_features,
@@ -96,4 +122,9 @@ feature_networks = {
                     'resnet50':partial(resnet_features, version=50),
                     'resnet34':partial(resnet_features, version=34),
                     'resnet18':partial(resnet_features, version=18),
+                    'alexnet_fc1':partial(linear_features, 
+                                          convnet_generator=alexnet_features,
+                                          linear_layers=[2048]),
+                    'alexnet_fc2':partial(linear_features, 
+                                          convnet_generator=alexnet_features),
                     }

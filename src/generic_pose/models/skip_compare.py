@@ -8,7 +8,7 @@ Created on Sun Feb 11 17:07:35 2018
 #Skip connections
 import torch.nn as nn
 
-def create_combine_net(inplanes, planes, blocks):
+def create_skip_compare(inplanes, planes, blocks):
    class BasicBlock(nn.Module):
      def __init__(self, inplanes, planes, downsample=None):
        super(BasicBlock, self).__init__()
@@ -58,8 +58,7 @@ def create_combine_net(inplanes, planes, blocks):
      layers.append(_make_layer(inplanes, planes[i], blocks[i]))
      inplanes = planes[i]
    return nn.Sequential(*layers)
-   
-   
+           
 
 #combine_net = create_combine_net(
 #       2 * NUM_CHANNELS,

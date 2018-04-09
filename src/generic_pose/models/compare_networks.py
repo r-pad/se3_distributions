@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 
 from generic_pose.models.symetric_layers import QSymetric, SplitLinear
-
+from generic_pose.models.skip_compare import create_skip_compare
 class CompareNet(nn.Module):
     def __init__(self, features_size, output_dim):
         super(CompareNet, self).__init__()
@@ -26,7 +26,45 @@ class CompareNet(nn.Module):
                                      )
     def forward(self, v1, v2):
         return self.network(torch.cat((v1, v2), dim=1))
+
+class LinearPreCompareNet(nn.Module):
+    def __init__(self, features_size, output_dim):
+        super(LinearPreCompareNet, self).__init__()
+
+        self.linear = nn.Sequential(
+                                    nn.Linear(features_size, 2048),
+                                    nn.ReLU(inplace=True)
+                                    )
+
+
+        self.network = nn.Sequential(
+                                     nn.Dropout(),
+                                     nn.Linear(4096, 4096),
+                                     nn.ReLU(inplace=True),
+                                     nn.Dropout(),
+                                     nn.Linear(4096, 4096),
+                                     nn.ReLU(inplace=True),
+                                     nn.Linear(4096, int(np.prod(output_dim)))
+                                     )
+    def forward(self, v1, v2):
+        v1 = self.linear(v1)
+        v2 = self.linear(v2)
+        return self.network(torch.cat((v1, v2), dim=1))
         
+class SkipCompareNet(nn.Module):
+    def __init__(self, features_size, output_dim):
+        super(SkipCompareNet, self).__init__()
+
+        self.network = create_skip_compare(inplanes = features_size * 2, 
+                                           planes = [4096, 4096],
+                                           blocks = [1, 1])
+                                           
+        self.linear = nn.Linear(4096, int(np.prod(output_dim)))
+        
+    def forward(self, v1, v2):
+        x = self.network(torch.cat((v1, v2), dim=1))
+        return self.linear(x)
+
 class SymetricCompareNet(nn.Module):
     def __init__(self, features_size, output_dim = 4):
         super(SymetricCompareNet, self).__init__()
@@ -85,6 +123,8 @@ class SplitCompareNet(nn.Module):
 
 compare_networks = {
                     'basic':CompareNet,
+                    'linear':LinearPreCompareNet,
+                    'skip':SkipCompareNet,
                     'symetric':SymetricCompareNet,
                     'split':SplitCompareNet,
                     }
