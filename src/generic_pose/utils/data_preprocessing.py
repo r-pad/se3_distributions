@@ -107,6 +107,38 @@ def resizeAndPad(img, size, padColor=255.0):
     scaled_img = cv2.copyMakeBorder(scaled_img, pad_top, pad_bot, pad_left, pad_right, borderType=cv2.BORDER_CONSTANT, value=padColor)
 
     return scaled_img
+
+def cropAndResize(img, size, crop_percent):
+
+    h, w = img.shape[:2]
+    sh, sw = size
+
+    ch = crop_percent*h
+    cw = crop_percent*w
+
+    if(ch/sh > cw/sw):
+        ch = cw*sh/sw
+    else:
+        cw = ch*sw/sh
+    
+    ch = int(ch)
+    cw = int(cw)
+    
+    r0 = int(h/2-ch/2)
+    r1 = r0 + ch
+    c0 = int(w/2-cw/2)
+    c1 = c0 + cw
+    cropped_img = img[r0:r1, c0:c1]
+
+    # interpolation method
+    if ch > sh or cw > sw: # shrinking image
+        interp = cv2.INTER_AREA
+    else: # stretching image
+        interp = cv2.INTER_CUBIC
+
+    scaled_img = cv2.resize(cropped_img, (sw, sh), interpolation=interp)
+    
+    return scaled_img
     
 def transparentOverlay(foreground, background=None, pos=(0,0),scale = 1):
     """
@@ -176,8 +208,7 @@ def quatDiff(q1, q2):
     q_diff = tf_trans.quaternion_multiply(q1, tf_trans.quaternion_inverse(q2))
     if(q_diff[-1] < 0):
         q_diff *= -1.0
-    return q_diff
-            
+    return q_diff         
     
 def quatAngularDiff(q1, q2):
     q_diff = quatDiff(q1, q2)

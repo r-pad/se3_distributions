@@ -13,7 +13,7 @@ import scipy
 from scipy import ndimage as ndi
 
 import matplotlib
-#matplotlib.use('Agg')
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
@@ -103,6 +103,30 @@ def makeEulerDisplayImages(origin_imgs, query_imgs,
     disp_imgs = np.flip(np.transpose(disp_imgs, (0,3,1,2)),1)
 
     return disp_imgs
+
+def makeHistogramImages(angle_error, angle_truth, num_bins = 180):
+    error_bins = np.zeros(num_bins)
+    count_bins = np.zeros(num_bins)
+    for err, truth in zip(angle_error, angle_truth):
+        idx = int(truth*num_bins/180)
+        error_bins[idx] += err
+        count_bins[idx] += 1
+
+    bin_vals = np.arange(num_bins)*180/num_bins
+    fig = get_figure()
+    ax = fig.gca()
+    ax.bar(bin_vals, error_bins/(count_bins + (count_bins==0)))
+    mean_hist = np.transpose(fig2rgb_array(fig, expand=True), (0,3,1,2))
+    fig.clear()
+    ax = fig.gca()
+    ax.bar(bin_vals, count_bins)
+    count_hist = np.transpose(fig2rgb_array(fig, expand=True), (0,3,1,2))
+    fig.clear()
+    ax = fig.gca()
+    ax.hist(angle_error, num_bins, density=True, facecolor='g', alpha=0.75, range=(0, 180))
+    error_hist = np.transpose(fig2rgb_array(fig, expand=True), (0,3,1,2))
+    
+    return mean_hist, error_hist, count_hist
     
 def makeDisplayImages(origin_imgs, query_imgs, 
                           true_class, true_quats,
@@ -546,7 +570,7 @@ def renderQuaternions(origin_imgs, query_imgs,
                       display_width = 1250, 
                       norm_mean = np.array([0.485, 0.456, 0.406]),
                       norm_std = np.array([0.229, 0.224, 0.225]), 
-                      camera_dist = 2, render_gripper = True):
+                      camera_dist = 2, render_gripper = False):
 
     origin_imgs = np.transpose(origin_imgs, (0,2,3,1))
     query_imgs = np.transpose(query_imgs, (0,2,3,1))
@@ -558,7 +582,8 @@ def renderQuaternions(origin_imgs, query_imgs,
     disp_h = (h*disp_w)//(3*w)
     
     disp_imgs = np.zeros((n, disp_h, disp_w, c), dtype='float32')
-    if(render_gripper):
+
+    if(n > 0 and model_files[0].split('/')[-1] == 'electric_gripper_w_fingers.obj'):
         init_q = tf_trans.quaternion_inverse(tf_trans.quaternion_about_axis(3*np.pi/4, [2,-2,1]))
     else:
         init_q = np.array([ 0.0,  0.0,  0.0,  1.0])
@@ -599,6 +624,6 @@ def renderQuaternions(origin_imgs, query_imgs,
         cv2.putText(disp_imgs[j], display_string_est, (10, text_height),
                     cv2.FONT_HERSHEY_SIMPLEX, .5, (0.0,0.0,0.0), 1)
         text_height += 20
-        
+    
     disp_imgs = np.flip(np.transpose(disp_imgs, (0,3,1,2)), 1)
     return disp_imgs

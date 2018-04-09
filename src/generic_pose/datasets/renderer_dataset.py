@@ -6,113 +6,46 @@ Created on Tue Jan  2 22:38:19 2018
 """
 import cv2
 import numpy as np
-#import os
+
 import torch
 from torch.utils.data import Dataset
 import torchvision.transforms as transforms
 
 import glob
-import tempfile
-import os
-import shutil
 
 from generic_pose.utils.pose_renderer import renderView
 import generic_pose.utils.transformations as tf_trans
-from generic_pose.utils.data_preprocessing import label2Probs, resizeAndPad, uniformRandomQuaternion, transparentOverlay, quat2Uniform, randomQuatNear
-
-from multiprocessing import Pool
-#import multiprocessing
-#from concurrent.futures import ProcessPoolExecutor
-
-import datetime
-from itertools import repeat
-from functools import partial
-#
-#class NoDaemonProcess(multiprocessing.Process):
-#    # make 'daemon' attribute always return False
-#    def _get_daemon(self):
-#        return False
-#    def _set_daemon(self, value):
-#        pass
-#    daemon = property(_get_daemon, _set_daemon)
-#
-#class Pool(multiprocessing.Pool):
-#    Process = NoDaemonProcess
-
-def pool_render(args):
-    print(args[0])
-    renderView(args[0], args[1], args[2], filenames=args[3], standard_lighting=args[4])
-
-def generateRotations(max_orientation_offset = None):
-    origin_quat = uniformRandomQuaternion()
-    if(max_orientation_offset is not None):
-        query_quat, offset_quat = randomQuatNear(origin_quat, max_orientation_offset)
-    else:
-        query_quat = uniformRandomQuaternion()
-        offset_quat = tf_trans.quaternion_multiply(query_quat, tf_trans.quaternion_conjugate(origin_quat))
-        
-    return origin_quat, query_quat, offset_quat
- 
-def generateDataBatch(model_filename, data_folder, num_model_imgs,
-                      obj_dir_depth = 0,
-                      camera_dist = 2, 
-                      randomize_lighting = False, 
-                      max_orientation_offset=None):
-
-    num_digits = len(str(num_model_imgs))
-    [model_class, model] = model_filename.split('/')[(-3-obj_dir_depth):(-1-obj_dir_depth)]
-    os.makedirs(os.path.join(data_folder, '{0}/{1}'.format(model_class, model)), exist_ok=True)
-            
-    filenames = []
-    for j in range(num_model_imgs):
-        filenames.append(os.path.join(data_folder, '{0}/{1}/{0}_{1}_{2:0{3}d}'.format(model_class, model, j, num_digits)))
-     
-    render_quats = []
-    image_filenames = []
-    
-    for data_filename in filenames:
-        image_filenames.append(data_filename + '_origin.png')
-        image_filenames.append(data_filename + '_query.png')            
-
-        data = generateRotations(max_orientation_offset)
-        render_quats.append(data[0])
-        render_quats.append(data[1])
-        np.save(data_filename + '_origin.npy',  data[0])
-        np.save(data_filename + '_query.npy',  data[1])
-
-        np.savez(data_filename + '.npz', 
-                 offset_quat = data[2])
-
-    args = [model_filename, render_quats, camera_dist, image_filenames, not randomize_lighting]
-    print('{} Rendering Model {}'.format(datetime.datetime.now().time(), model_filename))
-    pool_render(args)
-    return filenames
+from generic_pose.utils.data_preprocessing import (label2DenseWeights, 
+                                                   resizeAndPad, 
+                                                   uniformRandomQuaternion, 
+                                                   transparentOverlay, 
+                                                   quat2Uniform, 
+                                                   randomQuatNear, 
+                                                   quatDiff)
 
 class PoseRendererDataSet(Dataset):
-    def __init__(self, model_filenames, img_size, 
+    def __init__(self, model_folders, img_size, 
                  background_filenames = None,
                  max_orientation_offset = None,
-                 prerender = True,
                  randomize_lighting = False,
                  camera_dist=2,
-                 num_model_imgs = 250000,
-                 data_folder = None,
-                 save_data = False,
-                 num_render_workers = 20,
-                 obj_dir_depth = 0):
+                 obj_dir_depth = 0,
+                 classification = True,
+                 num_bins = (50, 50, 25),
+                 distance_sigma = 1):
 
         super(PoseRendererDataSet, self).__init__()
         
         self.img_size = img_size
-        self.prerendered = prerender
-        self.data_folder = data_folder
-        self.save_data = save_data
         self.randomize_lighting = randomize_lighting
         self.model_filenames = []
         self.camera_dist = camera_dist
         self.obj_dir_depth = obj_dir_depth
+
+        self.classification = classification        
+        self.class_bins = num_bins
+        self.distance_sigma = distance_sigma
         
-        self.class_bins = 360
         if(background_filenames is None):
             self.background_filenames = []
         else:
@@ -123,122 +56,146 @@ class PoseRendererDataSet(Dataset):
         self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                               std=[0.229, 0.224, 0.225])
         self.to_tensor = transforms.ToTensor()
-
-        if(model_filenames is not None):
-            self.model_filenames = model_filenames
-            self.num_render_workers = num_render_workers
-            
-            #self.per_model_workers = max(num_render_workers//len(self.model_filenames), 1)
-            #self.global_model_workers = num_render_workers//self.per_model_workers
-
-            if self.prerendered:
-                if self.data_folder is None:
-                    self.data_folder = tempfile.mkdtemp()
-                elif not os.path.exists(self.data_folder):
-                    os.makedirs(self.data_folder, exist_ok=True)
+        self.loop_truth = []
         
-                if(len(self.model_filenames) < self.num_render_workers):
-                    self.prerenderDataImage(num_model_imgs, self.data_folder)
-                else:
-                    self.prerenderDataModel(num_model_imgs, self.data_folder)
-
-        elif(self.data_folder is not None):
-            self.prerendered = True
-            self.save_data = True
-            files = glob.glob(self.data_folder + '/**/*.npz', recursive=True)
-            
-            self.data_filenames = []
-            for filename in files:
-                self.data_filenames.append('.'.join(filename.split('.')[:-1]))
-            
-            if(num_model_imgs < len(self.data_filenames)):
-                self.data_filenames = self.data_filenames[:num_model_imgs]
+        if(type(model_folders) is list):
+            files = []
+            for folder in model_folders:
+                files.extend(glob.glob(folder + '/**/*.obj', recursive=True))
+        elif(type(model_folders) is str):
+            files = glob.glob(model_folders + '/**/*.obj', recursive=True)
         else:
-            raise AssertionError('Both model_filenames and data_folder cannot be None')
+            raise AssertionError('Invalid model_folders type {}'.format(type(model_folders)))
 
-    def __del__(self):
-        if(not self.save_data):
-            shutil.rmtree(self.data_folder)
+        self.model_filenames = []
+        self.model_classes = []
+        
+        self.class_idxs = {}
+        self.class_list_idx = []
+        
+        for j, path in enumerate(files):
+            [model_class, model] = path.split('/')[(-3-self.obj_dir_depth):(-1-self.obj_dir_depth)]
             
+            if(model_class in self.class_idxs):
+                self.class_idxs[model_class].append(j)
+            else:
+                self.class_idxs[model_class] = [j]
+
+            self.model_filenames.append(path)
+            self.model_classes.append(model_class)
+            self.class_list_idx.append(len(self.class_idxs[model_class]) - 1)
+
     def __getitem__(self, index):
-        if(self.prerendered):
-            origin_img = cv2.imread(self.data_filenames[index] + '_origin.png', cv2.IMREAD_UNCHANGED)
-            query_img = cv2.imread(self.data_filenames[index] + '_query.png', cv2.IMREAD_UNCHANGED)
-            
-            npzfile = np.load(self.data_filenames[index] + '.npz')
-            offset_quat = npzfile['offset_quat']
-            offset_u0 = npzfile['offset_u0']
-            offset_u1 = npzfile['offset_u1']
-            offset_u2 = npzfile['offset_u2']
-            u_bins = npzfile['u_bins']
-            
+        index = index % len(self.model_filenames)
+        if(len(self.loop_truth) < 2):
+            return self.getPair(index)
         else:
-            origin_img, query_img, offset_quat, offset_u0, offset_u1, offset_u2, u_bins = self.generateData(index)
-
-        origin_img = self.preprocessImages(origin_img)
-        query_img = self.preprocessImages(query_img)        
-
-        origin_img = self.normalize(self.to_tensor(origin_img))
-        query_img  = self.normalize(self.to_tensor(query_img))
+            return self.getLoop(index, loop_truth=self.loop_truth)
+            
+    def getPair(self, index):
+        quats, offset_quat, offset_class = self.nextRotation()
+        images, model_filename = self.generateImages(index, quats)
         
         offset_quat = torch.from_numpy(offset_quat)
-        offset_u0 = torch.from_numpy(offset_u0)
-        offset_u1 = torch.from_numpy(offset_u1)
-        offset_u2 = torch.from_numpy(offset_u2)
-        u_bins = torch.from_numpy(u_bins)
-                                      
-        return origin_img, query_img, offset_quat, offset_u0, offset_u1, offset_u2, u_bins
+        offset_class = torch.from_numpy(offset_class)
 
-    def prerenderDataImage(self, num_model_imgs, data_folder):
-        self.data_filenames = []
-        num_digits = len(str(num_model_imgs))
-        #Probably can be speeded by pooling
-        for index, model_file in enumerate(self.model_filenames):
-            [model_class, model] = model_file.split('/')[(-3-self.obj_dir_depth):(-1-self.obj_dir_depth)]
-            os.makedirs(os.path.join(self.data_folder, '{0}/{1}'.format(model_class, model)), exist_ok=True)
-            
-            data_filenames = []      
-            for j in range(num_model_imgs):
-                data_filenames.append(os.path.join(self.data_folder, '{0}/{1}/{0}_{1}_{2:0{3}d}'.format(model_class, model, j, num_digits)))
-                
-            self.generateDataBatch(index, data_filenames)            
-            
-            self.data_filenames.extend(data_filenames)
+        return images[0], images[1], offset_quat, offset_class, quats[0], model_filename
 
-    def prerenderDataModel(self, num_model_imgs, data_folder):
-        self.data_filenames = []
-        #Probably can be speeded by pooling
+    def getLoop(self, index, loop_truth=[1,0,0]):
+        images = []
+        models = []
+        model_files = []
+        quats = []
+        loop_len = len(loop_truth)
 
-        batch_render = partial(generateDataBatch, 
-                               data_folder = self.data_folder,
-                               num_model_imgs = num_model_imgs,
-                               obj_dir_depth = self.obj_dir_depth,
-                               camera_dist = self.camera_dist, 
-                               randomize_lighting = self.randomize_lighting, 
-                               max_orientation_offset=self.max_orientation_offset)
-                       
-        #pool = Pool(self.global_model_workers)
-        pool = Pool(self.num_render_workers)
-        for j, filenames in enumerate(pool.imap(batch_render, self.model_filenames)):
-            self.data_filenames.extend(filenames)
-            print('Process {}: {}'.format(j, len(filenames)))
+        if(loop_truth[0]):
+            quat_prev = None
+            loop_truth = loop_truth[1:]
+        else:
+            quat_prev = uniformRandomQuaternion()
         
-    def generateRotations(self):
-        origin_quat = uniformRandomQuaternion()
+        trans_test = []
+        it1 = 0
+        it2 = 0
+        while(len(loop_truth) > 0):
+            quats_render = []
+            trans_next = []
+            it1 += 1
+            while(len(loop_truth) > 0):
+                it2 += 1
+                quats_next, offset_quat, offset_class = self.nextRotation(quat_prev)
+                quats_render.extend(quats_next)
+                trans_next.append(offset_quat)
+                cont_loop = loop_truth[0]
+                loop_truth = loop_truth[1:]
+                if(not cont_loop):
+                    break
+
+            rendered_imgs, model_filename = self.generateImages(index, quats_render)
+            
+            quats.extend(quats_render)
+            images.extend(rendered_imgs)
+            trans_test.extend(trans_next)
+            models.extend([index for _ in range(len(rendered_imgs))])
+            model_files.extend([model_filename for _ in range(len(rendered_imgs))])
+
+            if(len(loop_truth) > 0):
+                index = index - np.random.randint(0, len(self.model_filenames)-1)
+                quat_prev = quats_render[-1]
+
+        trans = [quatDiff(quats[(j+1)%loop_len], quats[j]) for j in range(loop_len)]
+
+        return images, trans, quats, models, model_files
+        
+    def generateRotations(self, origin_quat = None):
+        if(origin_quat is None):
+            origin_quat = uniformRandomQuaternion()
+            
         if(self.max_orientation_offset is not None):
             query_quat, offset_quat = randomQuatNear(origin_quat, self.max_orientation_offset)
         else:
             query_quat = uniformRandomQuaternion()
             offset_quat = tf_trans.quaternion_multiply(query_quat, tf_trans.quaternion_conjugate(origin_quat))
-            
-        u = quat2Uniform(offset_quat)
-        u_bins = np.round(np.array(u)*self.class_bins)
-        offset_u0 = label2Probs(u_bins[0], self.class_bins)
-        offset_u1 = label2Probs(u_bins[1], self.class_bins)
-        offset_u2 = label2Probs(u_bins[2], self.class_bins)
         
-        return origin_quat, query_quat, offset_quat, offset_u0, offset_u1, offset_u2, u_bins
- 
+        if(self.classification):
+            offset_u = quat2Uniform(offset_quat)
+            offset_class = label2DenseWeights(offset_u, (self.num_bins[0],self.num_bins[1],self.num_bins[2]), self.distance_sigma)
+        else:
+            offset_class = np.zeros(1)
+            
+        return origin_quat, query_quat, offset_quat, offset_class
+
+    def nextRotation(self, origin_quat = None):
+        quats = []
+        if(origin_quat is None):
+            origin_quat = uniformRandomQuaternion()
+            quats.append(origin_quat)
+            
+        if(self.max_orientation_offset is not None):
+            query_quat, offset_quat = randomQuatNear(origin_quat, self.max_orientation_offset)
+        else:
+            query_quat = uniformRandomQuaternion()
+            offset_quat = tf_trans.quaternion_multiply(query_quat, tf_trans.quaternion_conjugate(origin_quat))
+        
+        quats.append(query_quat)
+        
+        if(self.classification):
+            offset_u = quat2Uniform(offset_quat)
+            offset_class = label2DenseWeights(offset_u, (self.num_bins[0],self.num_bins[1],self.num_bins[2]), self.distance_sigma)
+        else:
+            offset_class = np.zeros(1)
+            
+        return quats, offset_quat, offset_class
+
+    def generateImages(self, index, render_quats):
+        model_filename = self.model_filenames[index]
+
+        # Will need to make distance random at some point
+        rendered_imgs = renderView(model_filename, render_quats, self.camera_dist, standard_lighting=not self.randomize_lighting)
+        
+        images = [self.normalize(self.to_tensor(self.preprocessImages(img))) for img in rendered_imgs]
+        return images, model_filename
+
     def preprocessImages(self, image):
         num_background_files = len(self.background_filenames)
         if(num_background_files  > 0):
@@ -256,141 +213,6 @@ class PoseRendererDataSet(Dataset):
         image = resizeAndPad(image, self.img_size)
         
         return image
- 
-    def generateData(self, index):
-        model_filename = self.model_filenames[index]
-
-        origin_quat, query_quat, offset_quat, offset_u0, offset_u1, offset_u2, u_bins = self.generateRotations()
-
-        render_quats = []        
-        render_quats.append(origin_quat)
-        render_quats.append(query_quat)
-            
-        # Will need to make distance random at some point
-        rendered_imgs = renderView(model_filename, render_quats, self.camera_dist, standard_lighting=not self.randomize_lighting)
         
-        origin_img = self.preprocessImages(rendered_imgs[0])
-        query_img = self.preprocessImages(rendered_imgs[1])
-
-        return origin_img, query_img, offset_quat, offset_u0, offset_u1, offset_u2, u_bins
-
-    def generateDataBatch(self, index, filenames):
-        model_filename = self.model_filenames[index]
-
-        render_quats = []
-        image_filenames = []
-        
-        for data_filename in filenames:
-            image_filenames.append(data_filename + '_origin.png')
-            image_filenames.append(data_filename + '_query.png')            
-
-            data = self.generateRotations()            
-            render_quats.append(data[0])
-            render_quats.append(data[1])
-            np.save(data_filename + '_origin.npy',  data[0])
-            np.save(data_filename + '_query.npy',  data[1])
-
-            np.savez(data_filename + '.npz', 
-                     offset_quat = data[2], 
-                     offset_u0 =  data[3], 
-                     offset_u1 =  data[4],
-                     offset_u2 =  data[5], 
-                     u_bins =  data[6])
-            
-        # Will need to make distance random at some point
-        pool = Pool(self.num_render_workers)
-        #pool_model_filename = [model_filename]*self.per_model_workers
-        #pool_camera_dist = [self.camera_dist]*self.per_model_workers
-        pool_render_quats = np.array_split(np.array(render_quats), self.per_model_workers)
-        pool_image_filenames = np.array_split(np.array(image_filenames), self.per_model_workers)
-
-        args = zip(repeat(model_filename), pool_render_quats, repeat(self.camera_dist), pool_image_filenames, repeat(not self.randomize_lighting))
-        for idx, return_code in enumerate(pool.imap(pool_render, args)):
-            print('{} Rendering Model {} group {}'.format(datetime.datetime.now().time(), model_filename, idx))
-            
-
     def __len__(self):
-        if(self.prerendered):
-            return len(self.data_filenames)
-        else:
-            return len(self.model_filenames)
-            
-
-def main():
-    from argparse import ArgumentParser
-    
-    parser = ArgumentParser()
-
-    parser.add_argument('--train_data_file', type=str, default=None)
-    parser.add_argument('--valid_data_file', type=str, default=None)
-    parser.add_argument('--obj_dir_depth', type=int, default=0)
-    parser.add_argument('--background_data_file', type=str, default=None)
-    parser.add_argument('--max_orientation_offset', type=float, default=None)
-    parser.add_argument('--randomize_lighting', dest='randomize_lighting', action='store_true')
-    parser.add_argument('--camera_dist', type=float, default=2)
-
-    #parser.add_argument('--num_workers', type=int, default=4)
-    parser.add_argument('--num_render_workers', type=int, default=20)
-    #parser.add_argument('--num_render_workers', type=int, default=20)
-
-    parser.add_argument('--height', type=int, default=224)
-    parser.add_argument('--width', type=int, default=224)
-    
-    parser.add_argument('--num_train_imgs', type=int, default=50000)
-    parser.add_argument('--num_valid_imgs', type=int, default=5000)
-    parser.add_argument('--train_data_folder', type=str, default=None)
-    parser.add_argument('--valid_data_folder', type=str, default=None)
-    parser.add_argument('--random_seed', type=int, default=0)
-
-    args = parser.parse_args()
-
-    if(args.train_data_file is not None):
-        with open(args.train_data_file, 'r') as f:    
-            train_filenames = f.read().split()
-    else:
-        train_filenames = None
-    
-    if(args.valid_data_file is not None):
-        with open(args.valid_data_file, 'r') as f:    
-            valid_filenames = f.read().split()    
-    else:
-        valid_filenames = None
-        
-    if(args.background_data_file is not None):
-        with open(args.background_data_file, 'r') as f:    
-            background_filenames = f.read().split()
-    else:
-        background_filenames = None
-
-    torch.manual_seed(args.random_seed)
-    torch.cuda.manual_seed_all(args.random_seed)
-    np.random.seed(args.random_seed)
-                
-    PoseRendererDataSet(model_filenames = train_filenames,
-                        img_size = (args.width,args.height),
-                        background_filenames = background_filenames,
-                        max_orientation_offset = args.max_orientation_offset,
-                        prerender = True,
-                        randomize_lighting = args.randomize_lighting,
-                        camera_dist = args.camera_dist,                        
-                        num_model_imgs = args.num_train_imgs,
-                        data_folder = args.train_data_folder,
-                        save_data = True,
-                        num_render_workers = args.num_render_workers,
-                        obj_dir_depth = args.obj_dir_depth)
-
-    PoseRendererDataSet(model_filenames = valid_filenames,
-                        img_size = (args.width,args.height),
-                        background_filenames = background_filenames,
-                        max_orientation_offset = args.max_orientation_offset,
-                        prerender = True,
-                        randomize_lighting = args.randomize_lighting,
-                        camera_dist = args.camera_dist,
-                        num_model_imgs = args.num_valid_imgs,
-                        data_folder = args.valid_data_folder,
-                        save_data = True,
-                        num_render_workers = args.num_render_workers,
-                        obj_dir_depth = args.obj_dir_depth)
-
-if __name__=='__main__':
-    main()
+        return len(self.model_filenames)*10000

@@ -14,14 +14,22 @@ import torchvision.transforms as transforms
 import os
 import glob
 
-from generic_pose.utils.data_preprocessing import label2DenseWeights, quat2Uniform, resizeAndPad, transparentOverlay, quatDiff
-import generic_pose.utils.transformations as tf_trans
+from generic_pose.utils.data_preprocessing import (label2DenseWeights, 
+                                                   quat2Uniform, 
+                                                   resizeAndPad, 
+                                                   cropAndResize, 
+                                                   transparentOverlay, 
+                                                   quatDiff, 
+                                                   quatAngularDiff)
 
 _datasets_dir = os.path.dirname(os.path.abspath(__file__))
 
 class PoseImageDataSet(Dataset):
     def __init__(self, data_folders,
                  img_size,
+                 crop_percent = None,
+                 max_orientation_offset = None,
+                 max_orientation_iters = 200,
                  model_filenames = None,
                  background_filenames = None,
                  classification = True,
@@ -32,6 +40,9 @@ class PoseImageDataSet(Dataset):
         super(PoseImageDataSet, self).__init__()
         
         self.img_size = img_size
+        self.crop_percent = crop_percent
+        self.max_orientation_offset = max_orientation_offset   
+        self.max_orientation_iters = max_orientation_iters
         
         self.classification = classification        
         self.num_bins = num_bins
@@ -51,12 +62,13 @@ class PoseImageDataSet(Dataset):
         if(type(data_folders) is list):
             files = []
             for folder in data_folders:
-                files.extend(glob.glob(folder + '/**/*.npy', recursive=True))
+                files.extend(glob.glob(folder + '/**/*.png', recursive=True))
         elif(type(data_folders) is str):
-            files = glob.glob(data_folders + '/**/*.npy', recursive=True)
+            files = glob.glob(data_folders + '/**/*.png', recursive=True)
         else:
             raise AssertionError('Invalid data_folders type {}'.format(type(data_folders)))
 
+        #print('{} files in {}'.format(len(files), data_folders))
         self.data_filenames = []
         self.data_models = []
         self.data_model_list_idx = []
@@ -93,20 +105,31 @@ class PoseImageDataSet(Dataset):
             return self.getPair(index)
         else:
             return self.getLoop(index, loop_truth=self.loop_truth)
+
+    def getPairIndex(self, index, origin_quat):
+        model = self.data_models[index]
+        model_list_idx = self.data_model_list_idx[index]
+        
+        assert len(self.model_idxs[model]) > 1, "Model must have > 1 view (model: {})".format(model)
+        for j in range(self.max_orientation_iters):
+            query_idx = self.model_idxs[model][model_list_idx - np.random.randint(0, len(self.model_idxs[model])-1)]
+            query_quat = np.load(self.data_filenames[query_idx] + '.npy')
+            if(self.max_orientation_offset is None or quatAngularDiff(query_quat, origin_quat) < self.max_orientation_offset):
+                break
+        return query_idx, query_quat
             
     def getPair(self, index):
         model = self.data_models[index]
-        model_list_idx = self.data_model_list_idx[index]
-        assert len(self.model_idxs[model]) > 1, "Model must have > 1 view (model: {})".format(model)
-        query_idx = self.model_idxs[model][model_list_idx - np.random.randint(0, len(self.model_idxs[model])-1)]            
 
+        # Rotations
+        origin_quat = np.load(self.data_filenames[index] + '.npy')
+
+        query_idx, query_quat = self.getPairIndex(index, origin_quat)
+        
         # Images
         origin_img = self.preprocessImages(cv2.imread(self.data_filenames[index] + '.png', cv2.IMREAD_UNCHANGED), normalized_tensor=True)
         query_img  = self.preprocessImages(cv2.imread(self.data_filenames[query_idx] + '.png', cv2.IMREAD_UNCHANGED), normalized_tensor=True)
         
-        # Rotations
-        origin_quat = np.load(self.data_filenames[index] + '.npy')
-        query_quat = np.load(self.data_filenames[query_idx] + '.npy')
 
         offset_quat = quatDiff(query_quat, origin_quat)
         offset_u = quat2Uniform(offset_quat)
@@ -157,21 +180,22 @@ class PoseImageDataSet(Dataset):
                 model_list_idx = self.data_model_list_idx[index]
                 #assert len(self.model_idxs[model]) > 1, "Model must have > 1 view (model: {})".format(model)
                 index = self.model_idxs[model][model_list_idx - np.random.randint(0, len(self.model_idxs[model])-1)]
+                index, _ = self.getPairIndex(index, quats[-1])
             else:
                 model = np.random.choice(list(set(self.model_idxs.keys()) ^ set([model])))
                 index = np.random.choice(self.model_idxs[model])
 
             if(j > 0):
-                if(models[j] == models[j-1]):
-                    trans.append(quatDiff(quats[j], quats[j-1]))
-                else:
-                    trans.append(np.zeros(4))
+                #if(models[j] == models[j-1]):
+                trans.append(quatDiff(quats[j], quats[j-1]))
+                #else:
+                #    trans.append(np.zeros(4))
 
-        if(models[0] == models[-1]):
-            trans.append(quatDiff(quats[0], quats[-1]))
-        else:
+        #if(models[0] == models[-1]):
+        trans.append(quatDiff(quats[0], quats[-1]))
+        #else:
             # Might need to change based on how torch handles this
-            trans.append(np.zeros(4))
+        #    trans.append(np.zeros(4))
 
         return images, trans, quats, models, model_files
  
@@ -187,8 +211,11 @@ class PoseImageDataSet(Dataset):
         
         if(image.shape[2] == 4):
             image = transparentOverlay(image, background)
-            
-        image = resizeAndPad(image, self.img_size)
+        
+        if(self.crop_percent is not None):
+            image = cropAndResize(image, self.img_size, self.crop_percent)
+        else:
+            image = resizeAndPad(image, self.img_size)
         
         if(normalized_tensor):
             image = self.normalize(self.to_tensor(image))

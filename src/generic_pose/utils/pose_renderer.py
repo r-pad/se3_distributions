@@ -236,18 +236,6 @@ def main():
     import bpy
     # Input parameters
 
-    C = bpy.context
-    cycles_prefs = C.user_preferences.addons['cycles'].preferences
-    
-    C.scene.render.use_overwrite = False
-    C.scene.render.use_placeholder = True
-    cycles_prefs.compute_device_type = "CUDA"
-    C.user_preferences.compute_device_type = "CUDA"
-    for device in cycles_prefs.devices:
-        device.use = False
-    
-    cycles_prefs.devices[0].use = True
-
     bpy.context.scene.cycles.device = 'GPU'
     bpy.ops.import_scene.obj(filepath=args.shape_file) 
     
