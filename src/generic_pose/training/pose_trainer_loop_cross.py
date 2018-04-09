@@ -23,8 +23,8 @@ from generic_pose.losses.viewpoint_loss import ViewpointLoss, denseViewpointErro
 from generic_pose.losses.quaternion_loss import quaternionLoss, quaternionError
 from generic_pose.utils.display_pose import makeDisplayImages, renderTopRotations, renderQuaternions, makeHistogramImages
 from generic_pose.training.utils import to_np, to_var, evaluatePairReg, evaluatePairCls, evaluateLoopReg
-
-class PoseTrainer(object):
+    
+class PoseTrainerLoopCross(object):
     def __init__(self, 
                  train_data_folders,
                  valid_data_folders,
@@ -32,12 +32,11 @@ class PoseTrainer(object):
                  max_orientation_offset = None,
                  max_orientation_iters = 200,
                  batch_size = 32,
+                 loop_length = 2,
                  num_workers = 4,
                  model_filenames = None,
                  background_filenames = None,
-                 classification = True,
                  locked_pairs = False,
-                 num_bins = (50,50,25),
                  distance_sigma = 0.1,
                  render_distance = 2,
                  seed = 0):
@@ -45,11 +44,9 @@ class PoseTrainer(object):
         np.random.seed(seed)
         torch.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
-        self.num_bins = num_bins
         self.img_size = img_size
         self.class_loss = ViewpointLoss()
         self.render_distance = render_distance
-        self.classification = classification
         if(locked_pairs):
             DataSet = PoseImagePairsDataSet
         else:
@@ -61,27 +58,29 @@ class PoseTrainer(object):
                                                max_orientation_iters = max_orientation_iters,
                                                model_filenames=model_filenames,
                                                background_filenames = background_filenames,
-                                               classification = self.classification,
-                                               num_bins=self.num_bins,
+                                               classification=False,
+                                               num_bins=(1,1,1),
                                                distance_sigma=distance_sigma),
                                        num_workers=batch_size, 
                                        batch_size=batch_size, 
                                        shuffle=True)
-    
+        self.train_loader.dataset.loop_truth = [1,] + [0 for _ in range(loop_length-1)]
         self.valid_loader = DataLoader(DataSet(data_folders=valid_data_folders,
                                                img_size = img_size,
                                                max_orientation_offset = max_orientation_offset,
                                                max_orientation_iters = max_orientation_iters,
                                                model_filenames=model_filenames,
                                                background_filenames = background_filenames,
-                                               classification = self.classification,
-                                               num_bins=self.num_bins,
+                                               classification=False,
+                                               num_bins=(1,1,1),
                                                distance_sigma=distance_sigma),
                                        num_workers=num_workers, 
                                        batch_size=batch_size, 
                                        shuffle=True)
-    
-    def train(self, model, results_dir, 
+        self.valid_loader.dataset.loop_truth = [1,] + [0 for _ in range(loop_length-1)]
+        
+    def train(self, model, results_dir,
+              loop_truth,
               num_epochs = 100000,
               log_every_nth = 10,
               lr = 1e-5,
@@ -89,13 +88,12 @@ class PoseTrainer(object):
               num_display_imgs=1):
         model.train()
         model.cuda()
-
         if(optimizer.lower() == 'sgd'):
-            self.optimizer = SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=lr, momentum=0.9)
+            self.optimizer = SGD(model.parameters(), lr=lr, momentum=0.9)
         elif(optimizer.lower() == 'adam'):
-            self.optimizer = Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
+            self.optimizer = Adam(model.parameters(), lr=lr)
         elif(optimizer.lower() == 'adadelta'):
-            self.optimizer = Adadelta(filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
+            self.optimizer = Adadelta(model.parameters(), lr=lr)
         else:
             raise AssertionError('Unsupported Optimizer {}, only SGD, Adam, and Adadelta supported'.format(optimizer))
             
@@ -122,7 +120,6 @@ class PoseTrainer(object):
     
         cumulative_batch_idx = 0
         min_loss_quat = float('inf')
-        min_loss_binned = float('inf')
 
         print('Starting Training')
         
@@ -130,50 +127,62 @@ class PoseTrainer(object):
         #batch_digits = 8#len(str(len(self.train_loader)))        
         train_errors = []
         train_angles = []
+#        train_loop_errors = []
 
         for epoch_idx in range(1, num_epochs+1):
-            for batch_idx, (origin, query, quat_true, class_true, origin_quat, model_file) in enumerate(self.train_loader):
+            for batch_idx, (images, trans, quats, models, model_files) in enumerate(self.train_loader):
                 log_data = not((cumulative_batch_idx+1) % log_every_nth)
-                if(self.classification):
-                    train_results = evaluatePairCls(model, origin, query, class_true,
-                                                    num_bins = self.num_bins,
-                                                    optimizer = self.optimizer, 
-                                                    disp_metrics = True)
-                else:
-                    train_results = evaluatePairReg(model, origin, query, quat_true,
-                                                    optimizer = self.optimizer, 
-                                                    disp_metrics = True)
+                train_results = evaluatePairReg(model, images[0], images[1], trans[0],
+                                                optimizer = self.optimizer, 
+                                                disp_metrics = True)
+
+                train_cross = evaluatePairReg(model, images[1], images[2], trans[1],
+                                              optimizer = None, disp_metrics = True)
+
+                train_loop = evaluateLoopReg(model, images, trans, loop_truth,
+                                             optimizer = self.optimizer, 
+                                             disp_metrics = True)
 
                 if('errs_vec' in train_results.keys()):
                     train_errors.append(train_results['errs_vec'])
                     train_angles.append(train_results['diff_vec'])
+
+#                if('errs_vec' in train_loop.keys()):
+#                    train_loop_errors.append(train_loop['errs_vec'])
                     
                 if log_data:
-                    v_origin, v_query, v_quat_true, v_class_true, v_origin_quat, v_model_file = next(iter(self.valid_loader))
+                    v_images, v_trans, v_quats, v_models, v_model_files = next(iter(self.valid_loader))
                     
-                    if(self.classification):
-                        valid_results = evaluatePairCls(model, v_origin, v_query, v_class_true,
-                                                        num_bins = self.num_bins,
-                                                        optimizer = None, 
-                                                        disp_metrics = True)
-                    else:
-                        valid_results = evaluatePairReg(model, v_origin, v_query, v_quat_true,
-                                                        optimizer = None, 
-                                                        disp_metrics = True)
+                    valid_results = evaluatePairReg(model, v_images[0], v_images[1], v_trans[0],
+                                                    optimizer = None, disp_metrics = True)
+                    valid_cross = evaluatePairReg(model, v_images[1], v_images[2], v_trans[1],
+                                                  optimizer = None, disp_metrics = True)
+                    valid_loop = evaluateLoopReg(model, v_images, v_trans, loop_truth,
+                                                 optimizer = None, disp_metrics = True)
                     
                     print("epoch {} :: cumulative_batch_idx {}".format(epoch_idx, cumulative_batch_idx + 1))
                     
                     train_info = {}
-                    
                     for k,v in train_results.items():
                         if('vec' not in k):
                             train_info[k] = v
-
+                    for k,v in train_loop.items():
+                        if('vec' not in k):
+                            train_info[k] = v
+                    for k,v in train_cross.items():
+                        if('vec' not in k):
+                            train_info['cross_' + k] = v
+                            
                     valid_info = {}
-
                     for k,v in valid_results.items():
                         if('vec' not in k):
                             valid_info[k] = v
+                    for k,v in valid_loop.items():
+                        if('vec' not in k):
+                            valid_info[k] = v
+                    for k,v in valid_cross.items():
+                        if('vec' not in k):
+                            valid_info['cross_' + k] = v
                             
                     for tag, value in train_info.items():
                         train_logger.scalar_summary(tag, value, cumulative_batch_idx+1)
@@ -184,88 +193,78 @@ class PoseTrainer(object):
                     for tag, value in model.named_parameters():
                         tag = tag.replace('.', '/')
                         train_logger.histo_summary(tag, to_np(value), cumulative_batch_idx+1)
-                        if(value.grad is not None):
-                            train_logger.histo_summary(tag+'/grad', to_np(value.grad), cumulative_batch_idx+1)
-                    
+                        train_logger.histo_summary(tag+'/grad', to_np(value.grad), cumulative_batch_idx+1)
+            
                     if(len(train_errors) > 0):
                         train_logger.histo_summary('errs_vec',np.concatenate(train_errors), cumulative_batch_idx+1)
 #                    if(len(train_loop_errors) > 0):
 #                        train_logger.histo_summary('errs_vec',np.concatenate(train_loop_errors), cumulative_batch_idx+1)
 #                        train_loop_errors = []                                        
                     if('errs_vec' in valid_results.keys()):
-                        valid_logger.histo_summary('errs_vec',valid_results['errs_vec'], cumulative_batch_idx+1)                    
-            
-                    train_origin_imgs = to_np(origin.view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
-                    train_query_imgs = to_np(query.view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
-                    train_quat_true = to_np(quat_true[:num_display_imgs])
+                        valid_logger.histo_summary('errs_vec',valid_results['errs_vec'], cumulative_batch_idx+1)
+#                    if('errs_vec' in valid_loop.keys()):
+#                        valid_logger.histo_summary('errs_vec',valid_loop['errs_vec'], cumulative_batch_idx+1)
                     
-                    if('quat_vec' in train_results):
-                        train_quat_est = to_np(train_results['quat_vec'][:num_display_imgs])
-                        train_render_imgs = renderQuaternions(train_origin_imgs, train_query_imgs, 
-                                                              train_quat_true, train_quat_est,
-                                                              origin_quats = origin_quat[:num_display_imgs],
-                                                              model_files=model_file[:num_display_imgs],
-                                                              camera_dist = self.render_distance)
-                    else:
-                        train_quat_est = None
+                    train_origin_imgs = to_np(images[0].view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
+                    train_query_imgs  = to_np(images[1].view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
+                    train_quat_true   = to_np(trans[0][:num_display_imgs])                    
+                    train_quat_est = to_np(train_results['quat_vec'][:num_display_imgs])
+                    train_cross_imgs = to_np(images[2].view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
+                    train_cross_true  = to_np(trans[1][:num_display_imgs])
+                    train_cross_est   = to_np(train_cross['quat_vec'][:num_display_imgs])
                     
-                    if('class_vec' in train_results):
-                        train_class_true = to_np(class_true[:num_display_imgs])
-                        train_class_est = to_np(train_results['class_vec'][:num_display_imgs])
-                        train_render_imgs = renderTopRotations(train_class_true, train_class_est, 
-                                                               self.num_bins, 
-                                                               origin_quats = origin_quat[:num_display_imgs],
-                                                               model_files=model_file[:num_display_imgs],
-                                                               camera_dist = self.render_distance)
-
-                    else:
-                        train_class_true = None
-                        train_class_est = None
+                    train_render_imgs = renderQuaternions(train_origin_imgs, train_query_imgs, 
+                                                          train_quat_true, train_quat_est,
+                                                          origin_quats = quats[0][:num_display_imgs],
+                                                          model_files=model_files[0][:num_display_imgs],
+                                                          camera_dist = self.render_distance)
 
                     train_info = {'renders':train_render_imgs}
+
+                    train_render_cross_imgs = renderQuaternions(train_query_imgs, train_cross_imgs,
+                                                          train_cross_true, train_cross_est,
+                                                          origin_quats = quats[1][:num_display_imgs],
+                                                          model_files=model_files[1][:num_display_imgs],
+                                                          camera_dist = self.render_distance)
+
+                    train_info['cross'] = train_render_cross_imgs
                                       
                     train_disp_imgs = makeDisplayImages(train_origin_imgs, train_query_imgs,
-                                                        train_class_true, train_quat_true,
-                                                        train_class_est, train_quat_est, 
-                                                        num_bins = self.num_bins)
+                                                        None, train_quat_true,
+                                                        None, train_quat_est, 
+                                                        num_bins = (1,1,1))
+                    train_info['display'] = train_disp_imgs
 
-                    
-                    valid_origin_imgs = to_np(v_origin.view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
-                    valid_query_imgs  = to_np(v_query.view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
-                    valid_quat_true   = to_np(v_quat_true[:num_display_imgs])
-                    
-                    if('quat_vec' in valid_results):
-                        valid_quat_est = to_np(valid_results['quat_vec'][:num_display_imgs])
-                        valid_render_imgs = renderQuaternions(valid_origin_imgs, valid_query_imgs, 
-                                                              valid_quat_true, valid_quat_est,
-                                                              origin_quats = v_origin_quat[:num_display_imgs],
-                                                              model_files = v_model_file[:num_display_imgs],
-                                                              camera_dist = self.render_distance)
-                    else:
-                        valid_quat_est = None
-                    
-                    if('class_vec' in valid_results):
-                        valid_class_true = to_np(v_class_true[:num_display_imgs])
-                        valid_class_est = to_np(valid_results['class_vec'][:num_display_imgs])
-                        valid_render_imgs = renderTopRotations(valid_class_true, valid_class_est, 
-                                                               self.num_bins, 
-                                                               origin_quats = v_origin_quat[:num_display_imgs],
-                                                               model_files=v_model_file[:num_display_imgs],
-                                                               camera_dist = self.render_distance)
-                    else:
-                        valid_class_true = None
-                        valid_class_est = None
+                    valid_origin_imgs = to_np(v_images[0].view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
+                    valid_query_imgs  = to_np(v_images[1].view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
+                    valid_quat_true   = to_np(v_trans[0][:num_display_imgs])
+                    valid_quat_est    = to_np(valid_results['quat_vec'][:num_display_imgs])
+                    valid_cross_imgs  = to_np(v_images[2].view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
+                    valid_cross_true  = to_np(v_trans[1][:num_display_imgs])
+                    valid_cross_est   = to_np(valid_cross['quat_vec'][:num_display_imgs])
+
+                    valid_render_imgs = renderQuaternions(valid_origin_imgs, valid_query_imgs, 
+                                                          valid_quat_true, valid_quat_est,
+                                                          origin_quats = v_quats[0][:num_display_imgs],
+                                                          model_files = v_model_files[0][:num_display_imgs],
+                                                          camera_dist = self.render_distance)
 
                     valid_info = {'renders':valid_render_imgs}
                     
-                    valid_disp_imgs = makeDisplayImages(valid_origin_imgs, valid_query_imgs,
-                                                        valid_class_true, valid_quat_true,
-                                                        valid_class_est, valid_quat_est, 
-                                                        num_bins = self.num_bins)
-            
-                    train_info['display'] = train_disp_imgs
-                    valid_info['display'] = valid_disp_imgs
+                    valid_render_cross_imgs = renderQuaternions(valid_query_imgs, valid_cross_imgs,
+                                                         valid_cross_true, valid_cross_est,
+                                                         origin_quats = v_quats[1][:num_display_imgs],
+                                                         model_files = v_model_files[1][:num_display_imgs],
+                                                         camera_dist = self.render_distance)                    
+                    valid_info['cross'] = valid_render_cross_imgs
                     
+                    valid_disp_imgs = makeDisplayImages(valid_origin_imgs, valid_query_imgs,
+                                                        None, valid_quat_true,
+                                                        None, valid_quat_est, 
+                                                        num_bins = (1,1,1))
+            
+                    valid_info['display'] = valid_disp_imgs
+
                     if(len(train_errors) > 0):
                         train_mean_hist, train_error_hist, train_count_hist = makeHistogramImages(np.concatenate(train_errors), np.concatenate(train_angles))
                         train_info['mean_hist'] = train_mean_hist
@@ -278,11 +277,11 @@ class PoseTrainer(object):
                         valid_info['mean_hist'] = valid_mean_hist
                         valid_info['error_hist'] = valid_error_hist
                         valid_info['count_hist'] = valid_count_hist
-                    
-                    
+
+            
                     for tag, images in train_info.items():
                         train_logger.image_summary(tag, images, cumulative_batch_idx+1)
-                    
+            
                     for tag, images in valid_info.items():
                         valid_logger.image_summary(tag, images, cumulative_batch_idx+1)
                     
@@ -298,14 +297,7 @@ class PoseTrainer(object):
 #                                              epoch_digits, batch_digits))
                         weights_filename = os.path.join(weights_dir, 'best_quat.pth')
                         print("saving model ", weights_filename)
-                        torch.save(model.state_dict(), weights_filename)
-                    if('loss_binned' in valid_results and valid_results['loss_binned'] < min_loss_binned):
-                        min_loss_binned = min(min_loss_binned, valid_results.setdefault('loss_binned', -float('inf')))
-                                                                           
-                        weights_filename = os.path.join(weights_dir, 'best_binned.pth')
-                        print("saving model ", weights_filename)
-                        torch.save(model.state_dict(), weights_filename)
-                        
+                        torch.save(model.state_dict(), weights_filename)                        
 
                     weights_filename = os.path.join(weights_dir, 'latest.pth')
                     torch.save(model.state_dict(), weights_filename)
@@ -333,6 +325,7 @@ def main():
     parser.add_argument('--max_orientation_iters', type=int, default=200)
 
     parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--loop_length', type=int, default=3)
     parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--height', type=int, default=224)
     parser.add_argument('--width', type=int, default=224)
@@ -340,8 +333,6 @@ def main():
     parser.add_argument('--distance_sigma', type=float, default=1.0)
     parser.add_argument('--lr', type=float, default=1e-5)
     parser.add_argument('--optimizer', type=str, default='Adam')
-    
-    parser.add_argument('--fix_features', dest='fix_features', action='store_true')
     
     parser.add_argument('--model_type', type=str, default='vgg16')
     parser.add_argument('--compare_type', type=str, default='basic')
@@ -359,8 +350,6 @@ def main():
 
     assert args.output_type.lower() in ['regression', 'classification'], \
         'Invalid output_type {}, Must be regression or classification'.format(args.output_type.lower())
-
-    classification = args.output_type.lower() == 'classification'
 
     if(args.train_data_folders[-4:] == '.txt'):
         with open(args.train_data_folders, 'r') as f:    
@@ -400,22 +389,20 @@ def main():
     else:
         background_filenames = None
 
-    num_bins = (50,50,25)
-    trainer = PoseTrainer(train_data_folders = train_data_folders,
-                          valid_data_folders = valid_data_folders,
-                          img_size = (args.width,args.height),
-                          max_orientation_offset = args.max_orientation_offset,
-                          max_orientation_iters = args.max_orientation_iters,
-                          batch_size = args.batch_size,
-                          num_workers = args.num_workers,
-                          model_filenames = model_filenames,
-                          background_filenames = background_filenames,
-                          locked_pairs = args.locked_pairs,
-                          classification = classification, 
-                          num_bins = num_bins,
-                          distance_sigma = args.distance_sigma, 
-                          seed = args.random_seed,
-                          render_distance = render_distance)
+    trainer = PoseTrainerLoopCross(train_data_folders = train_data_folders,
+                              valid_data_folders = valid_data_folders,
+                              img_size = (args.width,args.height),
+                              max_orientation_offset = args.max_orientation_offset,
+                              max_orientation_iters = args.max_orientation_iters,
+                              batch_size = args.batch_size,
+                              loop_length = args.loop_length,
+                              num_workers = args.num_workers,
+                              model_filenames = model_filenames,
+                              background_filenames = background_filenames,
+                              locked_pairs = args.locked_pairs,
+                              distance_sigma = args.distance_sigma, 
+                              seed = args.random_seed,
+                              render_distance = render_distance)
 
 
     current_timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
@@ -424,21 +411,21 @@ def main():
     if args.weight_file is not None:
         args.pretrained = False
 
-    if(classification):
-        output_dim = num_bins
-    else:
-        output_dim = 4
-    
     model = gen_pose_net(args.model_type.lower(), 
                          args.compare_type.lower(), 
-                         output_dim = output_dim,
-                         pretrained = args.pretrained,
-                         fix_features = args.fix_features)
+                         output_dim = 4,
+                         pretrained = args.pretrained)
 
     if args.weight_file is not None:
         model.load_state_dict(torch.load(args.weight_file))
 
-    trainer.train(model, results_dir, 
+    if(args.loop_length == 2):
+        loop_truth = [0,0]
+    else:
+        loop_truth = [1,] + [0 for _ in range(args.loop_length-1)]
+
+    trainer.train(model, results_dir,
+                  loop_truth = loop_truth, 
                   num_epochs = args.num_epochs,
                   log_every_nth = args.log_every_nth,
                   lr = args.lr,

@@ -11,9 +11,13 @@ import torch
 from torch.autograd import Variable
 from generic_pose.losses.quaternion_loss import (quaternionLoss, 
                                                  quaternionError, 
-                                                 loopConsistencyLoss)
+                                                 loopConsistencyLoss,
+                                                 quaternionAngles,
+                                                 maxQuatAngle,
+                                                 blendedLoss,
+                                                 axisError)
 
-from generic_pose.losses.viewpoint_loss import ViewpointLoss, denseViewpointError
+from generic_pose.losses.viewpoint_loss import ViewpointLoss, denseViewpointError, dotLoss
 
 class_loss = ViewpointLoss()
 
@@ -29,7 +33,8 @@ def to_var(x):
     return Variable(x)
 
 def evaluatePairReg(model, origin, query, quat_true,
-                    optimizer=None, retain_graph = False, disp_metrics=False):
+                    optimizer=None, retain_graph = False, 
+                    disp_metrics=False, threshold = 5*np.pi/180, clip = None):
 
     origin = to_var(origin)
     query = to_var(query)
@@ -49,21 +54,118 @@ def evaluatePairReg(model, origin, query, quat_true,
 
     if(optimizer is not None):
         loss_quat.backward(retain_graph=retain_graph)
+        if(clip is not None):
+            torch.nn.utils.clip_grad_norm(model.parameters(), clip)
         optimizer.step()
 
-    results['quat_est'] = quat_est
+    results['quat_vec'] = quat_est
     results['loss_quat'] = loss_quat.data[0]
     
     if(disp_metrics):
-        err_quat = quaternionError(quat_est, quat_true)
-        results['err_quat'] = err_quat*180.0/np.pi
+        ang_errs = quaternionError(quat_est, quat_true)
+        ang_diff = quaternionAngles(quat_true)
+        results['errs_vec'] = ang_errs*180.0/np.pi
+        results['diff_vec'] = ang_diff*180.0/np.pi
+        results['mean_err'] = np.mean(ang_errs)*180.0/np.pi
+        results['thresh_{}'.format(int(threshold*180/np.pi))] = np.mean(ang_errs<threshold)
+        results['mean_origin_features'] = np.mean(np.abs(to_np(origin_features)))
+        results['mean_query_features'] = np.mean(np.abs(to_np(query_features)))
+
+    return results
+
+def evaluatePairMaxReg(model, origin, query, quat_true, max_angle = np.pi/4.0,
+                       optimizer=None, retain_graph = False, 
+                       disp_metrics=False, threshold = 5*np.pi/180, clip = None):
+
+    origin = to_var(origin)
+    query = to_var(query)
+    quat_true = to_var(quat_true)
+
+    results = {}
+
+    if(optimizer is not None):
+        optimizer.zero_grad()
+
+    origin_features = model.features(origin)
+    query_features = model.features(query)
+    quat_est = model.compare_network(origin_features, 
+                                     query_features)
+
+    quat_true = maxQuatAngle(quat_true, max_angle)
+    loss_quat = quaternionLoss(quat_est, quat_true)
+
+    if(optimizer is not None):
+        loss_quat.backward(retain_graph=retain_graph)
+        if(clip is not None):
+            torch.nn.utils.clip_grad_norm(model.parameters(), clip)
+        optimizer.step()
+
+    results['quat_vec'] = quat_est
+    results['loss_quat'] = loss_quat.data[0]
+    
+    if(disp_metrics):
+        ang_errs = quaternionError(quat_est, quat_true)
+        ang_diff = quaternionAngles(quat_true)
+        axis_err = axisError(quat_est, quat_true)
+        results['errs_vec'] = ang_errs*180.0/np.pi
+        results['diff_vec'] = ang_diff*180.0/np.pi
+        results['mean_err'] = np.mean(ang_errs)*180.0/np.pi
+        results['axis_err'] = np.mean(axis_err)*180.0/np.pi
+        results['thresh_{}'.format(int(threshold*180/np.pi))] = np.mean(ang_errs<threshold)
+        results['mean_origin_features'] = np.mean(np.abs(to_np(origin_features)))
+        results['mean_query_features'] = np.mean(np.abs(to_np(query_features)))
+
+    return results
+
+def evaluatePairBlendReg(model, origin, query, quat_true, 
+                         min_angle = np.pi/4.0, max_angle = np.pi,
+                         optimizer=None, retain_graph = False, 
+                         disp_metrics=False, threshold = 5*np.pi/180, clip = None):
+
+    origin = to_var(origin)
+    query = to_var(query)
+    quat_true = to_var(quat_true)
+
+    results = {}
+
+    if(optimizer is not None):
+        optimizer.zero_grad()
+
+    origin_features = model.features(origin)
+    query_features = model.features(query)
+    quat_est = model.compare_network(origin_features, 
+                                     query_features)
+
+    loss_quat = blendedLoss(quat_est, quat_true,
+                            min_angle=min_angle,
+                            max_angle=max_angle)
+
+    if(optimizer is not None):
+        loss_quat.backward(retain_graph=retain_graph)
+        if(clip is not None):
+            torch.nn.utils.clip_grad_norm(model.parameters(), clip)
+        optimizer.step()
+
+    results['quat_vec'] = quat_est
+    results['loss_quat'] = loss_quat.data[0]
+    
+    if(disp_metrics):
+        ang_errs = quaternionError(quat_est, quat_true)
+        ang_diff = quaternionAngles(quat_true)
+        axis_err = axisError(quat_est, quat_true)
+        results['errs_vec'] = ang_errs*180.0/np.pi
+        results['diff_vec'] = ang_diff*180.0/np.pi
+        results['mean_err'] = np.mean(ang_errs)*180.0/np.pi
+        results['axis_err'] = np.mean(axis_err)*180.0/np.pi
+        results['thresh_{}'.format(int(threshold*180/np.pi))] = np.mean(ang_errs<threshold)
         results['mean_origin_features'] = np.mean(np.abs(to_np(origin_features)))
         results['mean_query_features'] = np.mean(np.abs(to_np(query_features)))
 
     return results
 
 def evaluatePairCls(model, origin, query, class_true, num_bins,
-                    optimizer=None, retain_graph = False, disp_metrics=False):
+                    optimizer=None, retain_graph = False, disp_metrics=False,
+                    clip = None):
 
     origin = to_var(origin)
     query = to_var(query)
@@ -79,13 +181,15 @@ def evaluatePairCls(model, origin, query, class_true, num_bins,
     class_est = model.compare_network(origin_features,
                                       query_features)
     
-    loss_binned = class_loss(class_est, class_true)
+    loss_binned = dotLoss(class_est, class_true)
     
     if(optimizer is not None):
         loss_binned.backward(retain_graph=retain_graph)
+        if(clip is not None):
+            torch.nn.utils.clip_grad_norm(model.parameters(), clip)
         optimizer.step()
         
-    results['class_est'] = class_est
+    results['class_vec'] = class_est
     results['loss_binned'] = loss_binned.data[0]
     
     if(disp_metrics):
@@ -98,7 +202,8 @@ def evaluatePairCls(model, origin, query, class_true, num_bins,
     return results
 
 def evaluateLoopReg(model, images, trans_true, loop_truth,
-                    optimizer=None, retain_graph = False, disp_metrics=False):
+                    optimizer=None, retain_graph = False, disp_metrics=False, 
+                    clip=None):
     
     assert len(loop_truth) == len(images), 'Loop length must match loop truth'
 
@@ -120,6 +225,8 @@ def evaluateLoopReg(model, images, trans_true, loop_truth,
         
     if(optimizer is not None):
         loss_loop.backward(retain_graph=retain_graph)
+        if(clip is not None):
+            torch.nn.utils.clip_grad_norm(model.parameters(), clip)
         optimizer.step()
     
     results['loss_loop'] = loss_loop.data[0]

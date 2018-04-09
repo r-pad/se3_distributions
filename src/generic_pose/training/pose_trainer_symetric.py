@@ -21,7 +21,7 @@ from generic_pose.datasets.image_pair_dataset import PoseImagePairsDataSet
 
 from generic_pose.losses.viewpoint_loss import ViewpointLoss, denseViewpointError
 from generic_pose.losses.quaternion_loss import quaternionLoss, quaternionError
-from generic_pose.utils.display_pose import makeDisplayImages, renderTopRotations, renderQuaternions
+from generic_pose.utils.display_pose import makeDisplayImages, renderTopRotations, renderQuaternions, makeHistogramImages
 from generic_pose.training.utils import to_np, to_var, evaluatePairReg, evaluatePairCls, evaluateLoopReg
     
 class PoseTrainerSymetric(object):
@@ -122,16 +122,28 @@ class PoseTrainerSymetric(object):
         
         #epoch_digits = len(str(num_epochs+1))
         #batch_digits = 8#len(str(len(self.train_loader)))        
+        train_errors = []
+        train_angles = []
 
         for epoch_idx in range(1, num_epochs+1):
             for batch_idx, (images, trans, quats, models, model_files) in enumerate(self.train_loader):
                 log_data = not((cumulative_batch_idx+1) % log_every_nth)
                 train_results01 = evaluatePairReg(model, images[0], images[1], trans[0],
                                                   optimizer = self.optimizer, 
-                                                  disp_metrics = log_data)
+                                                  disp_metrics = True)
                 train_results10 = evaluatePairReg(model, images[1], images[0], trans[1],
                                                   optimizer = self.optimizer, 
-                                                  disp_metrics = log_data)                                    
+                                                  disp_metrics = True)
+                
+                if('errs_vec' in train_results01.keys()):
+                    train_errors.append(train_results01['errs_vec'])
+                    train_angles.append(train_results10['diff_vec'])
+
+                if('errs_vec' in train_results10.keys()):
+                    train_errors.append(train_results01['errs_vec'])
+                    train_angles.append(train_results10['diff_vec'])
+
+
                 if log_data:
                     v_images, v_trans, v_quats, v_models, v_model_files = next(iter(self.valid_loader))
                     
@@ -144,20 +156,20 @@ class PoseTrainerSymetric(object):
                     
                     train_info = {}
                     for k,v in train_results01.items():
-                        if('est' not in k):
+                        if('vec' not in k):
                             train_info[k] = v
                     
                     for k,v in train_results10.items():
-                        if('est' not in k):
+                        if('vec' not in k):
                             train_info[k] += v
                             train_info[k] /= 2.0
                             
                     valid_info = {}
                     for k,v in valid_results01.items():
-                        if('est' not in k):
+                        if('vec' not in k):
                             valid_info[k] = v
                     for k,v in valid_results10.items():
-                        if('est' not in k):
+                        if('vec' not in k):
                             valid_info[k] += v
                             valid_info[k] /= 2.0
                             
@@ -171,13 +183,17 @@ class PoseTrainerSymetric(object):
                         tag = tag.replace('.', '/')
                         train_logger.histo_summary(tag, to_np(value), cumulative_batch_idx+1)
                         train_logger.histo_summary(tag+'/grad', to_np(value.grad), cumulative_batch_idx+1)
-            
-            
+
+                    if(len(train_errors) > 0):
+                        train_logger.histo_summary('errs_vec',np.concatenate(train_errors), cumulative_batch_idx+1)
+                    if('errs_vec' in valid_results01.keys() and 'errs_vec' in valid_results10.keys()):
+                        valid_logger.histo_summary('errs_vec',np.concatenate([valid_results01['errs_vec'], valid_results10['errs_vec']]), cumulative_batch_idx+1)
+                        
                     train_origin_imgs = to_np(images[0].view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
                     train_query_imgs  = to_np(images[1].view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
                     train_quat_true   = to_np(trans[0][:num_display_imgs])
                     
-                    train_quat_est = to_np(train_results01['quat_est'][:num_display_imgs])
+                    train_quat_est = to_np(train_results01['quat_vec'][:num_display_imgs])
                     train_render_imgs = renderQuaternions(train_origin_imgs, train_query_imgs, 
                                                           train_quat_true, train_quat_est,
                                                           origin_quats = quats[0][:num_display_imgs],
@@ -196,7 +212,7 @@ class PoseTrainerSymetric(object):
                     valid_query_imgs  = to_np(v_images[1].view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
                     valid_quat_true   = to_np(v_trans[0][:num_display_imgs])
                     
-                    valid_quat_est = to_np(valid_results01['quat_est'][:num_display_imgs])
+                    valid_quat_est = to_np(valid_results01['quat_vec'][:num_display_imgs])
                     valid_render_imgs = renderQuaternions(valid_origin_imgs, valid_query_imgs, 
                                                           valid_quat_true, valid_quat_est,
                                                           origin_quats = v_quats[0][:num_display_imgs],
@@ -213,12 +229,25 @@ class PoseTrainerSymetric(object):
                                                         num_bins = self.num_bins)
             
                     train_info['display'] = train_disp_imgs
-            
+                    valid_info['display'] = valid_disp_imgs
+                    
+                    if(len(train_errors) > 0):
+                        train_mean_hist, train_error_hist, train_count_hist = makeHistogramImages(np.concatenate(train_errors), np.concatenate(train_angles))
+                        train_info['mean_hist'] = train_mean_hist
+                        train_info['error_hist'] = train_error_hist
+                        train_info['count_hist'] = train_disp_imgs
+                        train_errors = []
+                        train_angles = []                                    
+                    if('errs_vec' in valid_results01.keys()):
+                        valid_mean_hist, valid_error_hist, valid_count_hist = makeHistogramImages(np.concatenate([valid_results01['errs_vec'], valid_results10['errs_vec']]),
+                                                                                                  np.concatenate([valid_results01['diff_vec'], valid_results10['diff_vec']]))
+                        valid_info['mean_hist'] = valid_mean_hist
+                        valid_info['error_hist'] = valid_error_hist
+                        valid_info['count_hist'] = valid_count_hist
+                    
                     for tag, images in train_info.items():
                         train_logger.image_summary(tag, images, cumulative_batch_idx+1)
                     
-                    valid_info['display'] = valid_disp_imgs
-            
                     for tag, images in valid_info.items():
                         valid_logger.image_summary(tag, images, cumulative_batch_idx+1)
                     

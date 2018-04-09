@@ -10,24 +10,27 @@ from logger import Logger
 import torch
 import numpy as np
 
-from torch.autograd import Variable
 from torch.optim import Adam, Adadelta, SGD
 from torch.utils.data import DataLoader
 
 import os
 
 from generic_pose.datasets.image_dataset import PoseImageDataSet
-from generic_pose.datasets.image_pair_dataset import PoseImagePairsDataSet
 
-from generic_pose.losses.viewpoint_loss import ViewpointLoss, denseViewpointError
-from generic_pose.losses.quaternion_loss import quaternionLoss, quaternionError
-from generic_pose.utils.display_pose import makeDisplayImages, renderTopRotations, renderQuaternions, makeHistogramImages
-from generic_pose.training.utils import to_np, to_var, evaluatePairReg, evaluatePairCls, evaluateLoopReg
+from generic_pose.losses.viewpoint_loss import ViewpointLoss
+from generic_pose.utils.display_pose import makeDisplayImages, renderQuaternions, makeHistogramImages
+from generic_pose.training.utils import to_np, evaluatePairReg, evaluateLoopReg
     
-class PoseTrainerLoop(object):
+import resource
+rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
+resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))    
+    
+class ShapenetTrainerLoopCross(object):
     def __init__(self, 
-                 train_data_folders,
-                 valid_data_folders,
+                 train_data_folder,
+                 valid_class_folder,
+                 valid_model_folder,
+                 valid_pose_folder,
                  img_size = (227,227),
                  max_orientation_offset = None,
                  max_orientation_iters = 200,
@@ -36,7 +39,6 @@ class PoseTrainerLoop(object):
                  num_workers = 4,
                  model_filenames = None,
                  background_filenames = None,
-                 locked_pairs = False,
                  distance_sigma = 0.1,
                  render_distance = 2,
                  seed = 0):
@@ -47,12 +49,8 @@ class PoseTrainerLoop(object):
         self.img_size = img_size
         self.class_loss = ViewpointLoss()
         self.render_distance = render_distance
-        if(locked_pairs):
-            DataSet = PoseImagePairsDataSet
-        else:
-            DataSet = PoseImageDataSet
             
-        self.train_loader = DataLoader(DataSet(data_folders=train_data_folders,
+        self.train_loader = DataLoader(PoseImageDataSet(data_folders=train_data_folder,
                                                img_size = img_size,
                                                max_orientation_offset = max_orientation_offset,
                                                max_orientation_iters = max_orientation_iters,
@@ -65,7 +63,7 @@ class PoseTrainerLoop(object):
                                        batch_size=batch_size, 
                                        shuffle=True)
         self.train_loader.dataset.loop_truth = [1,] + [0 for _ in range(loop_length-1)]
-        self.valid_loader = DataLoader(DataSet(data_folders=valid_data_folders,
+        self.valid_class_loader = DataLoader(PoseImageDataSet(data_folders=valid_class_folder,
                                                img_size = img_size,
                                                max_orientation_offset = max_orientation_offset,
                                                max_orientation_iters = max_orientation_iters,
@@ -74,10 +72,40 @@ class PoseTrainerLoop(object):
                                                classification=False,
                                                num_bins=(1,1,1),
                                                distance_sigma=distance_sigma),
-                                       num_workers=num_workers, 
-                                       batch_size=batch_size, 
+                                       num_workers=int(num_workers/2), 
+                                       batch_size=int(batch_size/2), 
                                        shuffle=True)
-        self.valid_loader.dataset.loop_truth = [1,] + [0 for _ in range(loop_length-1)]
+        self.valid_class_loader.dataset.loop_truth = [1,] + [0 for _ in range(loop_length-1)]
+        self.valid_model_loader = DataLoader(PoseImageDataSet(data_folders=valid_model_folder,
+                                               img_size = img_size,
+                                               max_orientation_offset = max_orientation_offset,
+                                               max_orientation_iters = max_orientation_iters,
+                                               model_filenames=model_filenames,
+                                               background_filenames = background_filenames,
+                                               classification=False,
+                                               num_bins=(1,1,1),
+                                               distance_sigma=distance_sigma),
+                                       num_workers=int(num_workers/2), 
+                                       batch_size=int(batch_size/2), 
+                                       shuffle=True)
+        self.valid_model_loader.dataset.loop_truth = [1,] + [0 for _ in range(loop_length-1)]
+        self.valid_pose_loader = DataLoader(PoseImageDataSet(data_folders=valid_pose_folder,
+                                               img_size = img_size,
+                                               max_orientation_offset = max_orientation_offset,
+                                               max_orientation_iters = max_orientation_iters,
+                                               model_filenames=model_filenames,
+                                               background_filenames = background_filenames,
+                                               classification=False,
+                                               num_bins=(1,1,1),
+                                               distance_sigma=distance_sigma),
+                                       num_workers=int(num_workers/2), 
+                                       batch_size=int(batch_size/2), 
+                                       shuffle=True)
+        self.valid_pose_loader.dataset.loop_truth = [1,] + [0 for _ in range(loop_length-1)]
+
+        self.valid_loaders = [self.valid_class_loader,
+                              self.valid_model_loader,
+                              self.valid_pose_loader]
         
     def train(self, model, results_dir,
               loop_truth,
@@ -107,17 +135,27 @@ class PoseTrainerLoop(object):
         if not os.path.exists(train_log_dir):
             os.makedirs(train_log_dir)
         
-        valid_log_dir = os.path.join(log_dir,'valid')
-        if not os.path.exists(valid_log_dir):
-            os.makedirs(valid_log_dir)  
+        valid_class_log_dir = os.path.join(log_dir,'valid_class')
+        if not os.path.exists(valid_class_log_dir):
+            os.makedirs(valid_class_log_dir)  
+        valid_model_log_dir = os.path.join(log_dir,'valid_model')
+        if not os.path.exists(valid_model_log_dir):
+            os.makedirs(valid_model_log_dir)
+        valid_pose_log_dir = os.path.join(log_dir,'valid_pose')
+        if not os.path.exists(valid_pose_log_dir):
+            os.makedirs(valid_pose_log_dir)  
             
         weights_dir = os.path.join(results_dir,'weights')
         if not os.path.exists(weights_dir):
             os.makedirs(weights_dir)
             
         train_logger = Logger(train_log_dir)
-        valid_logger = Logger(valid_log_dir)
-    
+        valid_class_logger = Logger(valid_class_log_dir)
+        valid_model_logger = Logger(valid_model_log_dir)
+        valid_pose_logger = Logger(valid_pose_log_dir)
+        
+        valid_logger_list = [valid_class_logger, valid_model_logger, valid_pose_logger]
+        
         cumulative_batch_idx = 0
         min_loss_quat = float('inf')
 
@@ -135,6 +173,10 @@ class PoseTrainerLoop(object):
                 train_results = evaluatePairReg(model, images[0], images[1], trans[0],
                                                 optimizer = self.optimizer, 
                                                 disp_metrics = True)
+
+                train_cross = evaluatePairReg(model, images[1], images[2], trans[1],
+                                              optimizer = None, disp_metrics = True)
+
                 train_loop = evaluateLoopReg(model, images, trans, loop_truth,
                                              optimizer = self.optimizer, 
                                              disp_metrics = True)
@@ -147,13 +189,6 @@ class PoseTrainerLoop(object):
 #                    train_loop_errors.append(train_loop['errs_vec'])
                     
                 if log_data:
-                    v_images, v_trans, v_quats, v_models, v_model_files = next(iter(self.valid_loader))
-                    
-                    valid_results = evaluatePairReg(model, v_images[0], v_images[1], v_trans[0],
-                                                    optimizer = None, disp_metrics = True)
-                    valid_loop = evaluateLoopReg(model, v_images, v_trans, loop_truth,
-                                                 optimizer = None, disp_metrics = True)
-                    
                     print("epoch {} :: cumulative_batch_idx {}".format(epoch_idx, cumulative_batch_idx + 1))
                     
                     train_info = {}
@@ -163,41 +198,33 @@ class PoseTrainerLoop(object):
                     for k,v in train_loop.items():
                         if('vec' not in k):
                             train_info[k] = v
-                            
-                    valid_info = {}
-                    for k,v in valid_results.items():
+                    for k,v in train_cross.items():
                         if('vec' not in k):
-                            valid_info[k] = v
-                    for k,v in valid_loop.items():
-                        if('vec' not in k):
-                            valid_info[k] = v
-                            
+                            train_info['cross_' + k] = v
+
                     for tag, value in train_info.items():
                         train_logger.scalar_summary(tag, value, cumulative_batch_idx+1)
-                    
-                    for tag, value in valid_info.items():
-                        valid_logger.scalar_summary(tag, value, cumulative_batch_idx+1)
-                    
+
                     for tag, value in model.named_parameters():
                         tag = tag.replace('.', '/')
                         train_logger.histo_summary(tag, to_np(value), cumulative_batch_idx+1)
                         train_logger.histo_summary(tag+'/grad', to_np(value.grad), cumulative_batch_idx+1)
-            
+                                
                     if(len(train_errors) > 0):
                         train_logger.histo_summary('errs_vec',np.concatenate(train_errors), cumulative_batch_idx+1)
 #                    if(len(train_loop_errors) > 0):
 #                        train_logger.histo_summary('errs_vec',np.concatenate(train_loop_errors), cumulative_batch_idx+1)
 #                        train_loop_errors = []                                        
-                    if('errs_vec' in valid_results.keys()):
-                        valid_logger.histo_summary('errs_vec',valid_results['errs_vec'], cumulative_batch_idx+1)
-#                    if('errs_vec' in valid_loop.keys()):
-#                        valid_logger.histo_summary('errs_vec',valid_loop['errs_vec'], cumulative_batch_idx+1)
+
                     
                     train_origin_imgs = to_np(images[0].view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
                     train_query_imgs  = to_np(images[1].view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
-                    train_quat_true   = to_np(trans[0][:num_display_imgs])
-                    
+                    train_quat_true   = to_np(trans[0][:num_display_imgs])                    
                     train_quat_est = to_np(train_results['quat_vec'][:num_display_imgs])
+                    train_cross_imgs = to_np(images[2].view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
+                    train_cross_true  = to_np(trans[1][:num_display_imgs])
+                    train_cross_est   = to_np(train_cross['quat_vec'][:num_display_imgs])
+                    
                     train_render_imgs = renderQuaternions(train_origin_imgs, train_query_imgs, 
                                                           train_quat_true, train_quat_est,
                                                           origin_quats = quats[0][:num_display_imgs],
@@ -205,36 +232,20 @@ class PoseTrainerLoop(object):
                                                           camera_dist = self.render_distance)
 
                     train_info = {'renders':train_render_imgs}
+
+                    train_render_cross_imgs = renderQuaternions(train_query_imgs, train_cross_imgs,
+                                                          train_cross_true, train_cross_est,
+                                                          origin_quats = quats[1][:num_display_imgs],
+                                                          model_files=model_files[1][:num_display_imgs],
+                                                          camera_dist = self.render_distance)
+
+                    train_info['cross'] = train_render_cross_imgs
                                       
                     train_disp_imgs = makeDisplayImages(train_origin_imgs, train_query_imgs,
                                                         None, train_quat_true,
                                                         None, train_quat_est, 
                                                         num_bins = (1,1,1))
-
-                    
-                    valid_origin_imgs = to_np(v_images[0].view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
-                    valid_query_imgs  = to_np(v_images[1].view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
-                    valid_quat_true   = to_np(v_trans[0][:num_display_imgs])
-                    
-                    valid_quat_est = to_np(valid_results['quat_vec'][:num_display_imgs])
-                    valid_render_imgs = renderQuaternions(valid_origin_imgs, valid_query_imgs, 
-                                                          valid_quat_true, valid_quat_est,
-                                                          origin_quats = v_quats[0][:num_display_imgs],
-                                                          model_files = v_model_files[0][:num_display_imgs],
-                                                          camera_dist = self.render_distance)
-                    
-                    
-
-                    valid_info = {'renders':valid_render_imgs}
-                    
-                    valid_disp_imgs = makeDisplayImages(valid_origin_imgs, valid_query_imgs,
-                                                        None, valid_quat_true,
-                                                        None, valid_quat_est, 
-                                                        num_bins = (1,1,1))
-            
                     train_info['display'] = train_disp_imgs
-                    
-                    valid_info['display'] = valid_disp_imgs
 
                     if(len(train_errors) > 0):
                         train_mean_hist, train_error_hist, train_count_hist = makeHistogramImages(np.concatenate(train_errors), np.concatenate(train_angles))
@@ -243,21 +254,84 @@ class PoseTrainerLoop(object):
                         train_info['count_hist'] = train_disp_imgs
                         train_errors = []
                         train_angles = []                                
-                    if('errs_vec' in valid_results.keys()):
-                        valid_mean_hist, valid_error_hist, valid_count_hist = makeHistogramImages(valid_results['errs_vec'], valid_results['diff_vec'])
-                        valid_info['mean_hist'] = valid_mean_hist
-                        valid_info['error_hist'] = valid_error_hist
-                        valid_info['count_hist'] = valid_count_hist
 
-            
                     for tag, images in train_info.items():
                         train_logger.image_summary(tag, images, cumulative_batch_idx+1)
-            
-                    for tag, images in valid_info.items():
-                        valid_logger.image_summary(tag, images, cumulative_batch_idx+1)
-                    
+
                     self.optimizer.zero_grad()
 
+                    #########################################
+                    ############ VALIDATION SETS ############
+                    #########################################
+
+                    for valid_logger, valid_loader in zip(valid_logger_list, self.valid_loaders):
+                        v_images, v_trans, v_quats, v_models, v_model_files = next(iter(valid_loader))
+                        
+                        valid_results = evaluatePairReg(model, v_images[0], v_images[1], v_trans[0],
+                                                        optimizer = None, disp_metrics = True)
+                        valid_cross = evaluatePairReg(model, v_images[1], v_images[2], v_trans[1],
+                                                      optimizer = None, disp_metrics = True)
+                        valid_loop = evaluateLoopReg(model, v_images, v_trans, loop_truth,
+                                                     optimizer = None, disp_metrics = True)
+                                
+                        valid_info = {}
+                        for k,v in valid_results.items():
+                            if('vec' not in k):
+                                valid_info[k] = v
+                        for k,v in valid_loop.items():
+                            if('vec' not in k):
+                                valid_info[k] = v
+                        for k,v in valid_cross.items():
+                            if('vec' not in k):
+                                valid_info['cross_' + k] = v
+    
+                        for tag, value in valid_info.items():
+                            valid_logger.scalar_summary(tag, value, cumulative_batch_idx+1)
+    
+                        if('errs_vec' in valid_results.keys()):
+                            valid_logger.histo_summary('errs_vec',valid_results['errs_vec'], cumulative_batch_idx+1)
+    #                    if('errs_vec' in valid_loop.keys()):
+    #                        valid_logger.histo_summary('errs_vec',valid_loop['errs_vec'], cumulative_batch_idx+1)
+    
+                        valid_origin_imgs = to_np(v_images[0].view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
+                        valid_query_imgs  = to_np(v_images[1].view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
+                        valid_quat_true   = to_np(v_trans[0][:num_display_imgs])
+                        valid_quat_est    = to_np(valid_results['quat_vec'][:num_display_imgs])
+                        valid_cross_imgs  = to_np(v_images[2].view(-1, 3, self.img_size[0], self.img_size[1])[:num_display_imgs])
+                        valid_cross_true  = to_np(v_trans[1][:num_display_imgs])
+                        valid_cross_est   = to_np(valid_cross['quat_vec'][:num_display_imgs])
+    
+                        valid_render_imgs = renderQuaternions(valid_origin_imgs, valid_query_imgs, 
+                                                              valid_quat_true, valid_quat_est,
+                                                              origin_quats = v_quats[0][:num_display_imgs],
+                                                              model_files = v_model_files[0][:num_display_imgs],
+                                                              camera_dist = self.render_distance)
+    
+                        valid_info = {'renders':valid_render_imgs}
+                        
+                        valid_render_cross_imgs = renderQuaternions(valid_query_imgs, valid_cross_imgs,
+                                                             valid_cross_true, valid_cross_est,
+                                                             origin_quats = v_quats[1][:num_display_imgs],
+                                                             model_files = v_model_files[1][:num_display_imgs],
+                                                             camera_dist = self.render_distance)                    
+                        valid_info['cross'] = valid_render_cross_imgs
+                        
+                        valid_disp_imgs = makeDisplayImages(valid_origin_imgs, valid_query_imgs,
+                                                            None, valid_quat_true,
+                                                            None, valid_quat_est, 
+                                                            num_bins = (1,1,1))
+                
+                        valid_info['display'] = valid_disp_imgs
+    
+                        if('errs_vec' in valid_results.keys()):
+                            valid_mean_hist, valid_error_hist, valid_count_hist = makeHistogramImages(valid_results['errs_vec'], valid_results['diff_vec'])
+                            valid_info['mean_hist'] = valid_mean_hist
+                            valid_info['error_hist'] = valid_error_hist
+                            valid_info['count_hist'] = valid_count_hist
+                
+                        for tag, images in valid_info.items():
+                            valid_logger.image_summary(tag, images, cumulative_batch_idx+1)
+                        
                     if('loss_quat' in valid_results and valid_results['loss_quat'] < min_loss_quat):
                         min_loss_quat = min(min_loss_quat, valid_results.setdefault('loss_quat', -float('inf')))
 
@@ -281,14 +355,15 @@ def main():
     
     parser = ArgumentParser()
 
-    parser.add_argument('--train_data_folders', type=str, default=None)
-    parser.add_argument('--valid_data_folders', type=str, default=None)
+    parser.add_argument('--train_data_folder', type=str, default=None)
+    parser.add_argument('--valid_class_folder', type=str, default=None)
+    parser.add_argument('--valid_model_folder', type=str, default=None)
+    parser.add_argument('--valid_pose_folder', type=str, default=None)
     
     parser.add_argument('--weight_file', type=str, default=None)
     parser.add_argument('--model_data_file', type=str, default=None)
     parser.add_argument('--background_data_file', type=str, default=None)
 
-    parser.add_argument('--locked_pairs', dest='locked_pairs', action='store_true')
     parser.add_argument('--single_model', dest='single_model', action='store_true')
     parser.add_argument('--render_distance', type=float, default=2.0)
 
@@ -322,17 +397,6 @@ def main():
     assert args.output_type.lower() in ['regression', 'classification'], \
         'Invalid output_type {}, Must be regression or classification'.format(args.output_type.lower())
 
-    if(args.train_data_folders[-4:] == '.txt'):
-        with open(args.train_data_folders, 'r') as f:    
-            train_data_folders = f.read().split()
-    else:
-        train_data_folders = args.train_data_folders
-
-    if(args.valid_data_folders[-4:] == '.txt'):
-        with open(args.valid_data_folders, 'r') as f:    
-            valid_data_folders = f.read().split()
-    else:
-        valid_data_folders = args.valid_data_folders
     
     render_distance = args.render_distance
     if(args.model_data_file is not None):
@@ -360,20 +424,21 @@ def main():
     else:
         background_filenames = None
 
-    trainer = PoseTrainerLoop(train_data_folders = train_data_folders,
-                              valid_data_folders = valid_data_folders,
-                              img_size = (args.width,args.height),
-                              max_orientation_offset = args.max_orientation_offset,
-                              max_orientation_iters = args.max_orientation_iters,
-                              batch_size = args.batch_size,
-                              loop_length = args.loop_length,
-                              num_workers = args.num_workers,
-                              model_filenames = model_filenames,
-                              background_filenames = background_filenames,
-                              locked_pairs = args.locked_pairs,
-                              distance_sigma = args.distance_sigma, 
-                              seed = args.random_seed,
-                              render_distance = render_distance)
+    trainer = ShapenetTrainerLoopCross(train_data_folder = args.train_data_folder,
+                                       valid_class_folder = args.valid_class_folder,
+                                       valid_model_folder = args.valid_model_folder,
+                                       valid_pose_folder = args.valid_pose_folder,
+                                       img_size = (args.width,args.height),
+                                       max_orientation_offset = args.max_orientation_offset,
+                                       max_orientation_iters = args.max_orientation_iters,
+                                       batch_size = args.batch_size,
+                                       loop_length = args.loop_length,
+                                       num_workers = args.num_workers,
+                                       model_filenames = model_filenames,
+                                       background_filenames = background_filenames,
+                                       distance_sigma = args.distance_sigma, 
+                                       seed = args.random_seed,
+                                       render_distance = render_distance)
 
 
     current_timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')

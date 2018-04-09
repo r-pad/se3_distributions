@@ -16,27 +16,24 @@ from torch.utils.data import DataLoader
 
 import os
 
-from generic_pose.datasets.image_dataset import PoseImageDataSet
-from generic_pose.datasets.image_pair_dataset import PoseImagePairsDataSet
+from generic_pose.datasets.image_dataset_single import SinglePoseImageDataSet
 
 from generic_pose.losses.viewpoint_loss import ViewpointLoss, denseViewpointError
 from generic_pose.losses.quaternion_loss import quaternionLoss, quaternionError
 from generic_pose.utils.display_pose import makeDisplayImages, renderTopRotations, renderQuaternions, makeHistogramImages
 from generic_pose.training.utils import to_np, to_var, evaluatePairReg, evaluatePairCls, evaluateLoopReg
-
-class PoseTrainer(object):
-    def __init__(self, 
+    
+class PoseTrainerSingle(object):
+    def __init__(self,
+                 origin_filename,
                  train_data_folders,
                  valid_data_folders,
                  img_size = (227,227),
-                 max_orientation_offset = None,
-                 max_orientation_iters = 200,
                  batch_size = 32,
                  num_workers = 4,
-                 model_filenames = None,
+                 model_filename = None,
                  background_filenames = None,
                  classification = True,
-                 locked_pairs = False,
                  num_bins = (50,50,25),
                  distance_sigma = 0.1,
                  render_distance = 2,
@@ -50,33 +47,28 @@ class PoseTrainer(object):
         self.class_loss = ViewpointLoss()
         self.render_distance = render_distance
         self.classification = classification
-        if(locked_pairs):
-            DataSet = PoseImagePairsDataSet
-        else:
-            DataSet = PoseImageDataSet
             
-        self.train_loader = DataLoader(DataSet(data_folders=train_data_folders,
-                                               img_size = img_size,
-                                               max_orientation_offset = max_orientation_offset,
-                                               max_orientation_iters = max_orientation_iters,
-                                               model_filenames=model_filenames,
-                                               background_filenames = background_filenames,
-                                               classification = self.classification,
-                                               num_bins=self.num_bins,
-                                               distance_sigma=distance_sigma),
+            
+        self.train_loader = DataLoader(SinglePoseImageDataSet(origin_filename = origin_filename,
+                                                              data_folders=train_data_folders,
+                                                              img_size = img_size,
+                                                              model_filename=model_filename,
+                                                              background_filenames = background_filenames,
+                                                              classification = self.classification,
+                                                              num_bins=self.num_bins,
+                                                              distance_sigma=distance_sigma),
                                        num_workers=batch_size, 
                                        batch_size=batch_size, 
                                        shuffle=True)
     
-        self.valid_loader = DataLoader(DataSet(data_folders=valid_data_folders,
-                                               img_size = img_size,
-                                               max_orientation_offset = max_orientation_offset,
-                                               max_orientation_iters = max_orientation_iters,
-                                               model_filenames=model_filenames,
-                                               background_filenames = background_filenames,
-                                               classification = self.classification,
-                                               num_bins=self.num_bins,
-                                               distance_sigma=distance_sigma),
+        self.valid_loader = DataLoader(SinglePoseImageDataSet(origin_filename=origin_filename,
+                                                              data_folders=valid_data_folders,
+                                                              img_size = img_size,
+                                                              model_filename=model_filename,
+                                                              background_filenames = background_filenames,
+                                                              classification = self.classification,
+                                                              num_bins=self.num_bins,
+                                                              distance_sigma=distance_sigma),
                                        num_workers=num_workers, 
                                        batch_size=batch_size, 
                                        shuffle=True)
@@ -89,13 +81,12 @@ class PoseTrainer(object):
               num_display_imgs=1):
         model.train()
         model.cuda()
-
         if(optimizer.lower() == 'sgd'):
-            self.optimizer = SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=lr, momentum=0.9)
+            self.optimizer = SGD(model.parameters(), lr=lr, momentum=0.9)
         elif(optimizer.lower() == 'adam'):
-            self.optimizer = Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
+            self.optimizer = Adam(model.parameters(), lr=lr)
         elif(optimizer.lower() == 'adadelta'):
-            self.optimizer = Adadelta(filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
+            self.optimizer = Adadelta(model.parameters(), lr=lr)
         else:
             raise AssertionError('Unsupported Optimizer {}, only SGD, Adam, and Adadelta supported'.format(optimizer))
             
@@ -184,8 +175,7 @@ class PoseTrainer(object):
                     for tag, value in model.named_parameters():
                         tag = tag.replace('.', '/')
                         train_logger.histo_summary(tag, to_np(value), cumulative_batch_idx+1)
-                        if(value.grad is not None):
-                            train_logger.histo_summary(tag+'/grad', to_np(value.grad), cumulative_batch_idx+1)
+                        train_logger.histo_summary(tag+'/grad', to_np(value.grad), cumulative_batch_idx+1)
                     
                     if(len(train_errors) > 0):
                         train_logger.histo_summary('errs_vec',np.concatenate(train_errors), cumulative_batch_idx+1)
@@ -312,6 +302,7 @@ class PoseTrainer(object):
                 cumulative_batch_idx += 1
 
 def main():
+    import glob
     import datetime
     from argparse import ArgumentParser
     from generic_pose.models.pose_networks import gen_pose_net
@@ -320,17 +311,13 @@ def main():
 
     parser.add_argument('--train_data_folders', type=str, default=None)
     parser.add_argument('--valid_data_folders', type=str, default=None)
-    
+    parser.add_argument('--origin_index', type=int, default=0)
+
     parser.add_argument('--weight_file', type=str, default=None)
-    parser.add_argument('--model_data_file', type=str, default=None)
+    parser.add_argument('--model_filename', type=str, default=None)
     parser.add_argument('--background_data_file', type=str, default=None)
 
-    parser.add_argument('--locked_pairs', dest='locked_pairs', action='store_true')
-    parser.add_argument('--single_model', dest='single_model', action='store_true')
     parser.add_argument('--render_distance', type=float, default=2.0)
-
-    parser.add_argument('--max_orientation_offset', type=float, default=None)
-    parser.add_argument('--max_orientation_iters', type=int, default=200)
 
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--num_workers', type=int, default=4)
@@ -341,14 +328,11 @@ def main():
     parser.add_argument('--lr', type=float, default=1e-5)
     parser.add_argument('--optimizer', type=str, default='Adam')
     
-    parser.add_argument('--fix_features', dest='fix_features', action='store_true')
-    
     parser.add_argument('--model_type', type=str, default='vgg16')
     parser.add_argument('--compare_type', type=str, default='basic')
     parser.add_argument('--output_type', type=str, default='regression')
 
     parser.add_argument('--random_init', dest='pretrained', action='store_false')    
-    
     parser.add_argument('--random_seed', type=int, default=0)
 
     parser.add_argument('--results_dir', type=str, default='results/') 
@@ -375,24 +359,6 @@ def main():
         valid_data_folders = args.valid_data_folders
     
     render_distance = args.render_distance
-    if(args.model_data_file is not None):
-        if(args.single_model):
-            model_filenames = args.model_data_file
-            
-        else:
-            model_filenames = {}
-            if(args.model_data_file[-4:] == '.txt'):
-                with open(args.model_data_file, 'r') as f:    
-                    filenames = f.read().split()
-            else:
-                filenames = [args.model_data_file]
-
-            for path in filenames:
-                model = path.split('/')[-2]
-                model_filenames[model] = path
-            
-    else:
-        model_filenames = None
 
     if(args.background_data_file is not None):
         with open(args.background_data_file, 'r') as f:    
@@ -400,22 +366,22 @@ def main():
     else:
         background_filenames = None
 
+    origin_filename = glob.glob(train_data_folders + '/**/*.npy', recursive=True)[args.origin_index]
+    origin_filename = '.'.join(origin_filename.split('.')[:-1])
     num_bins = (50,50,25)
-    trainer = PoseTrainer(train_data_folders = train_data_folders,
-                          valid_data_folders = valid_data_folders,
-                          img_size = (args.width,args.height),
-                          max_orientation_offset = args.max_orientation_offset,
-                          max_orientation_iters = args.max_orientation_iters,
-                          batch_size = args.batch_size,
-                          num_workers = args.num_workers,
-                          model_filenames = model_filenames,
-                          background_filenames = background_filenames,
-                          locked_pairs = args.locked_pairs,
-                          classification = classification, 
-                          num_bins = num_bins,
-                          distance_sigma = args.distance_sigma, 
-                          seed = args.random_seed,
-                          render_distance = render_distance)
+    trainer = PoseTrainerSingle(origin_filename=origin_filename,
+                                train_data_folders = train_data_folders,
+                                valid_data_folders = valid_data_folders,
+                                img_size = (args.width,args.height),
+                                batch_size = args.batch_size,
+                                num_workers = args.num_workers,
+                                model_filename = args.model_filename,
+                                background_filenames = background_filenames,
+                                classification = classification, 
+                                num_bins = num_bins,
+                                distance_sigma = args.distance_sigma, 
+                                seed = args.random_seed,
+                                render_distance = render_distance)
 
 
     current_timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
@@ -432,8 +398,7 @@ def main():
     model = gen_pose_net(args.model_type.lower(), 
                          args.compare_type.lower(), 
                          output_dim = output_dim,
-                         pretrained = args.pretrained,
-                         fix_features = args.fix_features)
+                         pretrained = args.pretrained)
 
     if args.weight_file is not None:
         model.load_state_dict(torch.load(args.weight_file))
