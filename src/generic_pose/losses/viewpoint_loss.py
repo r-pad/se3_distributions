@@ -37,7 +37,11 @@ class ViewpointLoss(nn.Module):
         loss = loss.sum()
 
         return loss
-        
+
+def dotLoss(preds, labels):
+    labels = labels.float()
+    return -(labels * F.softmax(preds, dim=1)).sum()
+    
 def viewpointAccuracy(preds, labels):
     acc = 180 - ((preds.max(1)[1] - labels.max(1)[1]).abs() - 180).abs().data.cpu().numpy()
     return acc.sum() / acc.shape[0]
