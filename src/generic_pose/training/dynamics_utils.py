@@ -18,7 +18,7 @@ from generic_pose.losses.quaternion_loss import (quaternionLoss,
 def evaluateFeatureDynamics(model, img0, img1, quat01,
                             optimizer=None, retain_graph = False, 
                             disp_metrics=False, fix_truth = False,
-                            gamma = 0.1):
+                            gamma = 0.01):
     img0 = to_var(img0)
     img1 = to_var(img1)
     quat10 = quat01.clone()

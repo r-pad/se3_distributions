@@ -137,6 +137,7 @@ class DynamicsTrainer(object):
 
     def train(self, model, results_dir,
               loop_truth,
+              dynamics_gamma = 0.01,
               num_epochs = 100000,
               log_every_nth = 10,
               lr = 1e-5,
@@ -196,6 +197,7 @@ class DynamicsTrainer(object):
             for batch_idx, (images, trans, quats, models, model_files) in enumerate(self.train_loader):
                 log_data = not((cumulative_batch_idx+1) % log_every_nth)
                 train_results = evaluateFeatureDynamics(model, images[0], images[1], trans[0],
+                                                        gamma = dynamics_gamma,
                                                         optimizer = self.optimizer, 
                                                         disp_metrics = True)
 
@@ -301,7 +303,8 @@ class DynamicsTrainer(object):
                         v_images, v_trans, v_quats, v_models, v_model_files = next(iter(valid_loader))
                         
                         valid_results = evaluateFeatureDynamics(model, v_images[0], v_images[1], v_trans[0],
-                                                                optimizer = None, disp_metrics = True)
+                                                                optimizer = None, disp_metrics = True,
+                                                                gamma=dynamics_gamma)
 
                         if(self.cross_model_eval):
                             valid_cross = evaluatePairReg(model, v_images[1], v_images[2], v_trans[1],
@@ -423,6 +426,8 @@ def main():
     parser.add_argument('--angular_curriculum_limits', nargs='+', default=None)
     parser.add_argument('--curriculum_threshold', type=float, default=np.pi/9.0)
 
+    parser.add_argument('--dynamics_gamma', type=float, default=0.01)
+
     parser.add_argument('--loop_training', dest='loop_training', action='store_true')    
     parser.add_argument('--cross_model_eval', dest='cross_model_eval', action='store_true')    
 
@@ -526,6 +531,7 @@ def main():
 
     trainer.train(model, results_dir,
                   loop_truth = loop_truth, 
+                  dynamics_gamma = args.dynamics_gamma,
                   num_epochs = args.num_epochs,
                   log_every_nth = args.log_every_nth,
                   lr = args.lr,
