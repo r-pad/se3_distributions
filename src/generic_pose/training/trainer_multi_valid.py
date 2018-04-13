@@ -70,7 +70,7 @@ class MultiTrainer(object):
                                                classification=False,
                                                num_bins=(1,1,1),
                                                distance_sigma=distance_sigma),
-                                       num_workers=batch_size, 
+                                       num_workers=num_workers, 
                                        batch_size=batch_size, 
                                        shuffle=True)
         self.train_loader.dataset.loop_truth = [1,] + [0 for _ in range(loop_length-1)]
@@ -138,6 +138,7 @@ class MultiTrainer(object):
               loop_truth,
               num_epochs = 100000,
               log_every_nth = 10,
+              checkpoint_every_nth = 1000,
               lr = 1e-5,
               optimizer = 'SGD',
               num_display_imgs=1,
@@ -388,7 +389,7 @@ class MultiTrainer(object):
                     torch.save(model.state_dict(), weights_filename)
                     print(valid_results['mean_err']*np.pi/180, self.curriculum_threshold)
                     if(self.angular_curriculum_limits is not None and 
-                       curriculum_idx < len(self.angular_curriculum_limits) and
+                       curriculum_idx < len(self.angular_curriculum_limits)-1 and
                        valid_results['mean_err']*np.pi/180 < self.curriculum_threshold):
                         curriculum_idx += 1
                         self.setAngleLimit(self.angular_curriculum_limits[curriculum_idx])
@@ -400,6 +401,12 @@ class MultiTrainer(object):
                         torch.save(model.state_dict(), curr_weights_filename) 
                         cumulative_batch_idx += 1                        
                         break
+                    
+                checkpoint_model = not((cumulative_batch_idx+1) % checkpoint_every_nth)
+                if(checkpoint_model):
+                    checkpoint_weights_filename = os.path.join(weights_dir, 'checkpoint_{}.pth'.format(cumulative_batch_idx+1))
+                    print("checkpointing model ", checkpoint_weights_filename)
+                    torch.save(model.state_dict(), checkpoint_weights_filename)
                 cumulative_batch_idx += 1
 
 def main():
@@ -451,6 +458,7 @@ def main():
     parser.add_argument('--results_dir', type=str, default='results/') 
     parser.add_argument('--num_epochs', type=int, default=100000)
     parser.add_argument('--log_every_nth', type=int, default=50)
+    parser.add_argument('--checkpoint_every_nth', type=int, default=1000)
     parser.add_argument('--num_display_imgs', type=int, default=1)
 
     args = parser.parse_args()
@@ -534,9 +542,10 @@ def main():
                   num_epochs = args.num_epochs,
                   log_every_nth = args.log_every_nth,
                   lr = args.lr,
-                  optimizer=args.optimizer,
+                  optimizer = args.optimizer,
                   clip = args.clip_gradients,
-                  num_display_imgs = args.num_display_imgs)
+                  num_display_imgs = args.num_display_imgs,
+                  checkpoint_every_nth = args.checkpoint_every_nth)
 
 if __name__=='__main__':
     main()
