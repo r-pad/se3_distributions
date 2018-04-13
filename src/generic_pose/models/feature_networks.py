@@ -90,6 +90,9 @@ def resnet_features(pretrained=False, version = 101, **kwargs):
         
     return feature_network, feature_size
 
+#def simple_features(pretrain = False):
+#    return
+
 class LinearFeatureNet(nn.Module):
     def __init__(self, conv_network, conv_outsize, linear_layers = [2048, 2048]):
         super(LinearFeatureNet, self).__init__()
