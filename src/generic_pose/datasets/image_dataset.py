@@ -35,7 +35,7 @@ class PoseImageDataSet(Dataset):
                  classification = True,
                  num_bins = (50, 50, 25),
                  distance_sigma = 5,
-                 num_model_imgs = 250000):
+                 num_model_imgs = float('inf')):
 
         super(PoseImageDataSet, self).__init__()
         
@@ -159,9 +159,14 @@ class PoseImageDataSet(Dataset):
         trans = []
         
         for j, truth in enumerate(loop_truth):
-            model = self.data_models[index]
+            img = cv2.imread(self.data_filenames[index] + '.png', cv2.IMREAD_UNCHANGED)
+            while(img is None):
+                print('None Image {}: {}'.format(index, self.data_filenames[index] + '.png'))
+                index = np.random.randint(len(self.data_filenames))
+                img = cv2.imread(self.data_filenames[index] + '.png', cv2.IMREAD_UNCHANGED)
             
-            images.append(self.preprocessImages(cv2.imread(self.data_filenames[index] + '.png', cv2.IMREAD_UNCHANGED), normalized_tensor=True))
+            model = self.data_models[index]
+            images.append(self.preprocessImages(img, normalized_tensor=True))
             models.append(model)
             
             if(type(self.model_filenames) is dict):
