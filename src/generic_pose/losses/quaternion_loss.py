@@ -12,62 +12,62 @@ from torch.autograd import Variable
 from generic_pose.utils.data_preprocessing import quatAngularDiff, quat2AxisAngle
 
 def quaternionLoss(preds, labels, mean = True):
-        """
-        :param preds: quaternion predictions (batch_size, 1)
-        :param labels: label quaternions labels (batch_size, 1)
-        :return: Loss. Loss is a variable which may have a backward pass performed.
-        """
-        labels = labels.float()
-        labels *= torch.sign(labels[:,3]).unsqueeze(dim=1)
-        preds = preds.float()
-        loss = torch.zeros(1)
+    """
+    :param preds: quaternion predictions (batch_size, 1)
+    :param labels: label quaternions labels (batch_size, 1)
+    :return: Loss. Loss is a variable which may have a backward pass performed.
+    """
+    labels = labels.float()
+    labels *= torch.sign(labels[:,3]).unsqueeze(dim=1)
+    preds = preds.float()
+    loss = torch.zeros(1)
 
-        if torch.cuda.is_available():
-            loss = loss.cuda()
-        loss = torch.autograd.Variable(loss)
-        
-        qn = torch.norm(preds, p=2, dim=1)#.detach()
-        #In case of zero quats
-        qn_pad = qn + (qn==0).detach().float()
-        
-        preds = preds.div(qn_pad.unsqueeze(1).expand_as(preds))
-        loss = 1 - torch.sum(torch.mul(preds, labels.float()), 1)**2
-        if(mean):
-            return torch.mean(loss)
-        else:
-            return loss
+    if torch.cuda.is_available():
+        loss = loss.cuda()
+    loss = torch.autograd.Variable(loss)
+    
+    qn = torch.norm(preds, p=2, dim=1)#.detach()
+    #In case of zero quats
+    qn_pad = qn + (qn==0).detach().float()
+    
+    preds = preds.div(qn_pad.unsqueeze(1).expand_as(preds))
+    loss = 1 - torch.sum(torch.mul(preds, labels.float()), 1)**2
+    if(mean):
+        return torch.mean(loss)
+    else:
+        return loss
 
 def axisLoss(preds, labels, mean = True):
-        """
-        :param preds: quaternion predictions (batch_size, 1)
-        :param labels: label quaternions labels (batch_size, 1)
-        :return: Loss. Loss is a variable which may have a backward pass performed.
-        """
-        labels = labels.float()
-        labels *= torch.sign(labels[:,3]).unsqueeze(dim=1)
-        preds = preds.float()
-        loss = torch.zeros(1)
+    """
+    :param preds: quaternion predictions (batch_size, 1)
+    :param labels: label quaternions labels (batch_size, 1)
+    :return: Loss. Loss is a variable which may have a backward pass performed.
+    """
+    labels = labels.float()
+    labels *= torch.sign(labels[:,3]).unsqueeze(dim=1)
+    preds = preds.float()
+    loss = torch.zeros(1)
 
-        if torch.cuda.is_available():
-            loss = loss.cuda()
-        loss = torch.autograd.Variable(loss)
-        
-        ln = torch.norm(labels[:,:3], p=2, dim=1)#.detach()
-        ax_label = labels[:,:3].div(ln.unsqueeze(1).expand_as(labels[:,:3]))
-        
-        pn = torch.norm(preds[:,:3], p=2, dim=1)#.detach()
-        #In case of zero quats
-        pn_pad = pn + (pn==0).detach().float()
-        
-        ax_pred = preds[:,:3].div(pn_pad.unsqueeze(1).expand_as(preds[:,:3]))
-        ax_pred *= torch.sign(preds[:,3]).unsqueeze(dim=1)
-        #preds = preds.div(qn_pad.unsqueeze(1).expand_as(preds))
-        
-        loss = .5 - .5*torch.sum(torch.mul(ax_pred, ax_label.float()), 1)
-        if(mean):
-            return torch.mean(loss)
-        else:
-            return loss
+    if torch.cuda.is_available():
+        loss = loss.cuda()
+    loss = torch.autograd.Variable(loss)
+    
+    ln = torch.norm(labels[:,:3], p=2, dim=1)#.detach()
+    ax_label = labels[:,:3].div(ln.unsqueeze(1).expand_as(labels[:,:3]))
+    
+    pn = torch.norm(preds[:,:3], p=2, dim=1)#.detach()
+    #In case of zero quats
+    pn_pad = pn + (pn==0).detach().float()
+    
+    ax_pred = preds[:,:3].div(pn_pad.unsqueeze(1).expand_as(preds[:,:3]))
+    ax_pred *= torch.sign(preds[:,3]).unsqueeze(dim=1)
+    #preds = preds.div(qn_pad.unsqueeze(1).expand_as(preds))
+    
+    loss = .5 - .5*torch.sum(torch.mul(ax_pred, ax_label.float()), 1)
+    if(mean):
+        return torch.mean(loss)
+    else:
+        return loss
 
 def blendedLoss(preds, labels, min_angle = np.pi/4.0, max_angle = np.pi):
     th_true = quaternionAngles(labels)
@@ -79,22 +79,34 @@ def blendedLoss(preds, labels, min_angle = np.pi/4.0, max_angle = np.pi):
     loss = gamma * axisLoss(preds, labels, mean = False) + (1-gamma) * quaternionLoss(preds, labels, mean = False)
     return torch.mean(loss)
 
-def maxQuatAngle(qs, max_angle=np.pi/4.0):
-    angles = quaternionAngles(qs)
-    cos_max = np.cos(max_angle/2)
-    sin_max = np.sin(max_angle/2)
-    for j, th in enumerate(angles):
-        if th > max_angle:
-            axis = qs[j, :3].data.cpu().numpy()
-            axis = axis/np.linalg.norm(axis)*sin_max
-            clipped_q = torch.from_numpy(np.concatenate([axis, [cos_max]]))
-            if torch.cuda.is_available():
-                clipped_q = clipped_q.cuda()
-            
-            qs[j, :] = clipped_q
-    
+def clipQuatAngle(qs, max_angle=np.pi/4.0):
+    clipped_q = qs.clone()
+    cos_max = np.cos(max_angle/2.0)
+    sin_max = np.sin(max_angle/2.0)
+    cos_th = qs[:,3].div(torch.norm(qs, p=2, dim=1))
+    for j, c_th in enumerate(cos_th):
+        if (torch.abs(c_th) < cos_max).all():
+            axis = qs[j, :3]
+            if(c_th < 0).all():
+                axis = -axis
+            axis_norm = torch.norm(axis, p=2)
+            axis = axis.div(axis_norm.expand_as(axis))
+            clipped_q[j, :3] = axis*sin_max
+            clipped_q[j, 3] = cos_max
     return qs
-    
+
+def axisAngle2Quat(axis_angle, max_angle=np.pi/4.0):
+    q = torch.zeros(axis_angle.size()).float()
+    if torch.cuda.is_available():
+        q = q.cuda()
+    q = torch.autograd.Variable(q)
+    cos_th = torch.cos(0.5*torch.clamp(axis_angle[:,3], min=-max_angle, max=max_angle))
+    sin_th = torch.sin(0.5*torch.clamp(axis_angle[:,3], min=-max_angle, max=max_angle))
+    axis_norms = torch.norm(axis_angle[:,:3], p=2, dim=1)
+    q[:,:3] = axis_angle[:,:3] * (sin_th/axis_norms).unsqueeze(1).expand_as(axis_angle[:,:3])
+    q[:,3] = cos_th
+    return q
+
 def tensor2Angle(q):
     q *= torch.sign(q[:,3]).unsqueeze(dim=1)
     q[:,3] = torch.max(q[:,3],1)
@@ -174,13 +186,23 @@ def loopConsistencyLoss(loop_transforms, calc_angle=False):
     loss = torch.mean(1 - q_loop[:,3]**2)
     if(calc_angle):
         diff = 2*np.arccos(q_loop[:,3].data.cpu().numpy())
-        angle = np.mean(np.abs(diff - 2*np.pi*(diff > np.pi)))        
+        angle = np.abs(diff - 2*np.pi*(diff > np.pi))
     else:
         angle = None
         
     return loss, angle
 
-def quaternionMultiply(q1, q2):
+def quaternionInverse(q):
+    q_inv = torch.zeros(q.size()).float()
+    if torch.cuda.is_available():
+        q_inv = q_inv.cuda()
+    q_inv = torch.autograd.Variable(q_inv)
+    
+    q_inv[:,:3] = -q[:,:3]
+    q_inv[:,3] = q[:,3]
+    return q_inv
+
+def quaternionMultiply(q2, q1):
     
     return torch.stack([ q2[:,0]*q1[:,3] + q2[:,1]*q1[:,2] - q2[:,2]*q1[:,1] + q2[:,3]*q1[:,0],
                         -q2[:,0]*q1[:,2] + q2[:,1]*q1[:,3] + q2[:,2]*q1[:,0] + q2[:,3]*q1[:,1],
