@@ -59,6 +59,10 @@ class PoseImageDataSet(Dataset):
 
         self.loop_truth = []
 
+        if(type(data_folders) is str and data_folders[-4:] == '.txt'):
+            with open(data_folders, 'r') as f:    
+                data_folders = f.read().split()
+
         if(type(data_folders) is list):
             files = []
             for folder in data_folders:
@@ -139,7 +143,7 @@ class PoseImageDataSet(Dataset):
         elif(type(self.model_filenames) is str):
             model_file = self.model_filenames
         else:
-            model_file = os.join(_datasets_dir, 'jet.obj')
+            model_file = ''
 
         if(self.classification):
             offset_class = label2DenseWeights(offset_u, (self.num_bins[0],self.num_bins[1],self.num_bins[2]), self.distance_sigma)
@@ -174,7 +178,7 @@ class PoseImageDataSet(Dataset):
             elif(type(self.model_filenames) is str):
                 model_files.append(self.model_filenames)
             else:
-                model_files.append(os.join(_datasets_dir, 'jet.obj'))
+                model_files.append('')
             
             if(os.path.exists(self.data_filenames[index] + '.npy')):
                 quats.append(np.load(self.data_filenames[index] + '.npy'))
