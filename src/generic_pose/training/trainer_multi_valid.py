@@ -459,7 +459,7 @@ def main():
     parser.add_argument('--num_epochs', type=int, default=100000)
     parser.add_argument('--log_every_nth', type=int, default=50)
     parser.add_argument('--checkpoint_every_nth', type=int, default=1000)
-    parser.add_argument('--num_display_imgs', type=int, default=1)
+    parser.add_argument('--num_display_imgs', type=int, default=0)
 
     args = parser.parse_args()
 

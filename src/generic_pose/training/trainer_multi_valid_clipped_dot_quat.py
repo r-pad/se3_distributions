@@ -143,7 +143,7 @@ class MultiTrainer(object):
               lr = 1e-5,
               optimizer = 'SGD',
               num_display_imgs=1,
-              clip=None):
+              clip_angle = np.pi/4.0):
         model.train()
         model.cuda()
         if(optimizer.lower() == 'sgd'):
@@ -198,18 +198,19 @@ class MultiTrainer(object):
             for batch_idx, (images, trans, quats, models, model_files) in enumerate(self.train_loader):
                 log_data = not((cumulative_batch_idx+1) % log_every_nth)
                 train_results = evaluateMaxedDotQuat(model, images[0], images[1], trans[0],
+                                                     max_angle=clip_angle,
                                                  optimizer = self.optimizer, 
                                                  disp_metrics = True)
 
                 if(self.cross_model_eval):
                     train_cross = evaluateMaxedDotQuat(model, images[1], images[2], trans[1],
+                                                       max_angle=clip_angle,
                                                    optimizer = None, disp_metrics = True)
 
                 if(self.loop_training):
                     train_loop = evaluateLoopReg(model, images, trans, loop_truth,
                                                  optimizer = self.optimizer, 
-                                                 disp_metrics = True,
-                                                 clip = clip)
+                                                 disp_metrics = True)
 
                 if('errs_vec' in train_results.keys()):
                     train_errors.append(train_results['errs_vec'])
@@ -304,10 +305,12 @@ class MultiTrainer(object):
                         v_images, v_trans, v_quats, v_models, v_model_files = next(iter(valid_loader))
                         
                         valid_results = evaluateMaxedDotQuat(model, v_images[0], v_images[1], v_trans[0],
+                                                             max_angle=clip_angle,
                                                          optimizer = None, disp_metrics = True)
 
                         if(self.cross_model_eval):
                             valid_cross = evaluateMaxedDotQuat(model, v_images[1], v_images[2], v_trans[1],
+                                                               max_angle=clip_angle,
                                                            optimizer = None, disp_metrics = True)
                         if(self.loop_training):
                             valid_loop = evaluateLoopReg(model, v_images, v_trans, loop_truth,
@@ -444,7 +447,7 @@ def main():
     
     parser.add_argument('--distance_sigma', type=float, default=1.0)
     parser.add_argument('--lr', type=float, default=1e-5)
-    parser.add_argument('--clip_gradients', type=float, default=None)
+    parser.add_argument('--clip_angle', type=float, default=np.pi/4.0)
     parser.add_argument('--optimizer', type=str, default='Adam')
     
     parser.add_argument('--model_type', type=str, default='vgg16')
@@ -459,7 +462,7 @@ def main():
     parser.add_argument('--num_epochs', type=int, default=100000)
     parser.add_argument('--log_every_nth', type=int, default=50)
     parser.add_argument('--checkpoint_every_nth', type=int, default=1000)
-    parser.add_argument('--num_display_imgs', type=int, default=1)
+    parser.add_argument('--num_display_imgs', type=int, default=0)
 
     args = parser.parse_args()
 
@@ -543,7 +546,7 @@ def main():
                   log_every_nth = args.log_every_nth,
                   lr = args.lr,
                   optimizer = args.optimizer,
-                  clip = args.clip_gradients,
+                  clip_angle = args.clip_angle,
                   num_display_imgs = args.num_display_imgs,
                   checkpoint_every_nth = args.checkpoint_every_nth)
 

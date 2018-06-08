@@ -388,11 +388,15 @@ class MultiTrainer(object):
                     torch.save(model.state_dict(), weights_filename)
                     print(valid_results['mean_err']*np.pi/180, self.curriculum_threshold)
                     if(self.angular_curriculum_limits is not None and 
-                       curriculum_idx < len(self.angular_curriculum_limits) and
+                       curriculum_idx < len(self.angular_curriculum_limits)-1 and
                        valid_results['mean_err']*np.pi/180 < self.curriculum_threshold):
                         curriculum_idx += 1
                         train_logger.scalar_summary('curriculum_idx', curriculum_idx, cumulative_batch_idx+1)
                         train_logger.scalar_summary('max_orientation_offset', self.angular_curriculum_limits[curriculum_idx]*np.pi/180, cumulative_batch_idx+1)
+                        print('curriculum_idx: ', curriculum_idx)
+                        curr_weights_filename = os.path.join(weights_dir, 'curr_{}.pth'.format(cumulative_batch_idx))                        
+                        print("saving model ", curr_weights_filename)
+                        torch.save(model.state_dict(), curr_weights_filename)                         
                         cumulative_batch_idx += 1
                         break
                 cumulative_batch_idx += 1
