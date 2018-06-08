@@ -77,6 +77,7 @@ def evaluateIterQuatBatch(model, model_filename,
     rendered_images = renderView(model_filename, iter_quats+query_quats,
                                  camera_dist = camera_dist,
                                  standard_lighting = True)
+                                 
     iter_imgs = to_var(torch.stack([preprocessImages(img, img_size) for img in rendered_images[:num_samples]]))
     query_imgs = to_var(torch.stack([preprocessImages(img, img_size) for img in rendered_images[num_samples:]]))
     
