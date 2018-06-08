@@ -13,7 +13,8 @@ import torchvision.transforms as transforms
 
 import glob
 
-from generic_pose.utils.pose_renderer import renderView
+#from generic_pose.utils.pose_renderer import renderView
+from model_renderer.pose_renderer import renderView
 import generic_pose.utils.transformations as tf_trans
 from generic_pose.utils.data_preprocessing import (label2DenseWeights, 
                                                    resizeAndPad, 
