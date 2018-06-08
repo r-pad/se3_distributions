@@ -27,6 +27,24 @@ class CompareNet(nn.Module):
     def forward(self, v1, v2):
         return self.network(torch.cat((v1, v2), dim=1))
 
+class SigmoidCompareNet(nn.Module):
+    def __init__(self, features_size, output_dim):
+        super(SigmoidCompareNet, self).__init__()
+
+        self.network = nn.Sequential(
+                                     nn.Dropout(),
+                                     nn.Linear(features_size * 2, 4096),
+                                     nn.ReLU(inplace=True),
+                                     nn.Dropout(),
+                                     nn.Linear(4096, 4096),
+                                     nn.ReLU(inplace=True),
+                                     nn.Linear(4096, int(np.prod(output_dim))),
+                                     nn.Sigmoid()
+                                     )
+    def forward(self, v1, v2):
+        return self.network(torch.cat((v1, v2), dim=1))
+
+
 class LinearPreCompareNet(nn.Module):
     def __init__(self, features_size, output_dim):
         super(LinearPreCompareNet, self).__init__()
@@ -124,6 +142,7 @@ class SplitCompareNet(nn.Module):
 compare_networks = {
                     'basic':CompareNet,
                     'linear':LinearPreCompareNet,
+                    'sigmoid':SigmoidCompareNet,
                     'skip':SkipCompareNet,
                     'symetric':SymetricCompareNet,
                     'split':SplitCompareNet,
