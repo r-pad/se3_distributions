@@ -5,7 +5,7 @@ RenderForCNN (link: https://arxiv.org/pdf/1505.05641.pdf)
 Caffe implmentation:
 https://github.com/charlesq34/caffe-render-for-cnn/blob/view_prediction/
 """
-
+import torch
 import torch.nn.functional as F
 from torch import nn
 import numpy as np

@@ -93,7 +93,7 @@ def clipQuatAngle(qs, max_angle=np.pi/4.0):
             axis = axis.div(axis_norm.expand_as(axis))
             clipped_q[j, :3] = axis*sin_max
             clipped_q[j, 3] = cos_max
-    return qs
+    return clipped_q
 
 def axisAngle2Quat(axis_angle, max_angle=np.pi/4.0):
     q = torch.zeros(axis_angle.size()).float()
@@ -109,7 +109,7 @@ def axisAngle2Quat(axis_angle, max_angle=np.pi/4.0):
 
 def tensor2Angle(q):
     q *= torch.sign(q[:,3]).unsqueeze(dim=1)
-    q[:,3] = torch.max(q[:,3],1)
+    q[:,3] = torch.clamp(q[:,3],max=1.0)
 
     angle = 2*torch.acos(q[:,3])
     axis = q[:,:3].div(angle.unsqueeze(1).expand_as(q[:,:3]))
