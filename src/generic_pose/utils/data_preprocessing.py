@@ -169,14 +169,15 @@ def transparentOverlay(foreground, background=None, pos=(0,0),scale = 1):
 
 # inverse transform sampling proportional to sin2(theta)
 _x = np.linspace(0, np.pi, 256)
+_cdf_norm = np.pi/2.
 _cdf_sin2 = 1./2. * (_x - np.cos(_x)*np.sin(_x))
-_cdf_sin2 /= _cdf_sin2[-1]
+_cdf_sin2 /= _cdf_norm
 _inv_cdf = interpolate.interp1d(_cdf_sin2, _x)
 
 def randomQuatNear(init_quat, max_orientation_offset):
     offset_axis = np.random.randn(3)
     offset_axis /= np.linalg.norm(offset_axis)
-    norm_const = 1/2 * (max_orientation_offset - np.cos(max_orientation_offset)*np.sin(max_orientation_offset))
+    norm_const = 1/2 * (max_orientation_offset - np.cos(max_orientation_offset)*np.sin(max_orientation_offset))/_cdf_norm
     offset_angle = _inv_cdf(norm_const * np.random.rand())
     offset_quat = tf_trans.quaternion_about_axis(offset_angle, offset_axis)
     near_quat = tf_trans.quaternion_multiply(init_quat, offset_quat)

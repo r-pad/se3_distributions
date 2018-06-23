@@ -112,11 +112,11 @@ class PoseImageDataSet(Dataset):
 
     def getPairIndex(self, index, origin_quat):
         model = self.data_models[index]
-        model_list_idx = self.data_model_list_idx[index]
+        #model_list_idx = self.data_model_list_idx[index]
         
         assert len(self.model_idxs[model]) > 1, "Model must have > 1 view (model: {})".format(model)
         for j in range(self.max_orientation_iters):
-            query_idx = self.model_idxs[model][model_list_idx - np.random.randint(0, len(self.model_idxs[model])-1)]
+            query_idx = self.model_idxs[model][np.random.randint(0, len(self.model_idxs[model]))]
             query_quat = np.load(self.data_filenames[query_idx] + '.npy')
             if(self.max_orientation_offset is None or quatAngularDiff(query_quat, origin_quat) < self.max_orientation_offset):
                 break
@@ -186,9 +186,9 @@ class PoseImageDataSet(Dataset):
                 quats.append(np.zeros(4))
 
             if(truth or len(self.model_idxs.keys()) == 1):
-                model_list_idx = self.data_model_list_idx[index]
+                #model_list_idx = self.data_model_list_idx[index]
                 #assert len(self.model_idxs[model]) > 1, "Model must have > 1 view (model: {})".format(model)
-                index = self.model_idxs[model][model_list_idx - np.random.randint(0, len(self.model_idxs[model])-1)]
+                index = self.model_idxs[model][np.random.randint(0, len(self.model_idxs[model]))]
                 index, _ = self.getPairIndex(index, quats[-1])
             else:
                 model = np.random.choice(list(set(self.model_idxs.keys()) ^ set([model])))
