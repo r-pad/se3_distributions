@@ -17,10 +17,10 @@ from generic_pose.datasets.image_dataset import PoseImageDataSet
 from generic_pose.losses.quaternion_loss import quaternionLoss
 from generic_pose.training.utils import to_var, to_np
 from generic_pose.models.pose_networks import gen_pose_net
-from generic_pose.utils.data_preprocessing import quatAngularDiff
+from quat_math import quatAngularDiff
 
 import generic_pose.utils.transformations as q_utils
-import generic_pose.utils.data_preprocessing as pproc
+
 
 data_folders = '/scratch/bokorn/data/renders/drill_1_renders/valid/'
 model_data_file = '/scratch/bokorn/data/models/035_power_drill/google_64k/textured.obj'

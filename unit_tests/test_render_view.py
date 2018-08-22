@@ -2,7 +2,7 @@
 @author edwardahn
 """
 
-from generic_pose.utils.pose_renderer import renderView
+from generic_pose.utils.syscall_renderer import renderView
 import numpy as np
 import time
 

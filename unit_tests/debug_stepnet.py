@@ -13,11 +13,11 @@ from generic_pose.datasets.image_dataset import PoseImageDataSet
 from generic_pose.losses.quaternion_loss import quaternionLoss
 from generic_pose.training.utils import to_var
 from generic_pose.models.pose_networks import gen_pose_net
-from generic_pose.utils.data_preprocessing import quatAngularDiff
+from quat_math import quatAngularDiff
 from generic_pose.training.step_utils import getAxes, evaluateStepClass
 
 import generic_pose.utils.transformations as q_utils
-import generic_pose.utils.data_preprocessing as pproc
+
 
 train_data_folder = '/ssd0/bokorn/data/renders/drill_debug/train' 
 valid_pose_folder = '/ssd0/bokorn/data/renders/drill_debug/valid'

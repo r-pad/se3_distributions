@@ -16,7 +16,7 @@ from generic_pose.training.utils import to_var
 from generic_pose.models.pose_networks import gen_pose_net
 
 import generic_pose.utils.transformations as q_utils
-import generic_pose.utils.data_preprocessing as pproc
+
 
 data_file = '/home/bokorn/src/generic_pose/generic_pose/training_sets/robot_plane_valid.txt'
 with open(data_file, 'r') as f:    

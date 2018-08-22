@@ -15,7 +15,7 @@ from generic_pose.training.utils import evaluateLoopReg, evaluatePairReg
 from generic_pose.models.pose_networks import gen_pose_net
 import generic_pose.utils.transformations as tf_trans
 import generic_pose.utils.transformations as tf_trans
-from generic_pose.utils.data_preprocessing import quatAngularDiff, quat2AxisAngle
+from quat_math import quatAngularDiff, quat2AxisAngle
 
 #weight_file = '/home/bokorn/results/alexnet_reg_loop_car3/2018-03-16_11-51-19/weights/best_quat.pth'
 weight_file = '/home/bokorn/results/alexnet_reg_car3/2018-03-16_11-51-49/weights/best_quat.pth'

@@ -10,7 +10,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-from generic_pose.utils.data_preprocessing import quatAngularDiff, quat2AxisAngle
+from quat_math import quatAngularDiff, quat2AxisAngle
 from generic_pose.utils.transformations import random_quaternion
 
 num_diffs = 100000

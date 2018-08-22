@@ -17,10 +17,10 @@ from generic_pose.datasets.image_pair_dataset import PoseImagePairsDataSet
 from generic_pose.losses.quaternion_loss import quaternionLoss
 from generic_pose.training.utils import to_var
 from generic_pose.models.pose_networks import gen_pose_net
-from generic_pose.utils.data_preprocessing import quatDiff
+from quat_math import quatDiff
 
 import generic_pose.utils.transformations as q_utils
-import generic_pose.utils.data_preprocessing as pproc
+
 
 data_folders = '/scratch/bokorn/data/renders/drill_1_renders/valid/'
 

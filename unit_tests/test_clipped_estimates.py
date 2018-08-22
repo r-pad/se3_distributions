@@ -18,7 +18,7 @@ import cv2
 
 from generic_pose.losses.quaternion_loss import quaternionInverse, quaternionMultiply, clipQuatAngle, axisAngle2Quat
 from generic_pose.training.utils import to_var, to_np
-from generic_pose.utils.data_preprocessing import quatDiff, quat2AxisAngle
+from quat_math import quatDiff, quat2AxisAngle
 from generic_pose.utils.transformations import quaternion_multiply, quaternion_inverse
 
 data_file = '/home/bokorn/src/generic_pose/generic_pose/training_sets/folder_sets/car_3_models_train.txt'
