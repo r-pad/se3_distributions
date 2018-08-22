@@ -42,3 +42,14 @@ def getSummaryData(path, tags):
         print(e)
         pass
     return data
+
+def getWallTime(path):
+    data = []
+    try:
+        for e in tf.train.summary_iterator(path):
+            data.append([e.step, e.wall_time])
+    except Exception as e:
+        print(e)
+        pass
+    return data
+    

@@ -8,10 +8,6 @@ https://github.com/charlesq34/caffe-render-for-cnn/blob/view_prediction/
 import torch
 import torch.nn.functional as F
 from torch import nn
-import numpy as np
-import scipy
-
-from generic_pose.utils.data_preprocessing import indexAngularDiff
 
 class ViewpointLoss(nn.Module):
     def __init__(self, mean = True):
@@ -46,9 +42,9 @@ def viewpointAccuracy(preds, labels):
     acc = 180 - ((preds.max(1)[1] - labels.max(1)[1]).abs() - 180).abs().data.cpu().numpy()
     return acc.sum() / acc.shape[0]
     #return acc
-    
+
 def denseViewpointError(preds, labels, num_bins = (50, 50, 25), filter_sigma = 1.0):
-    batch_size = preds.size(0)    
+    batch_size = preds.size(0)
     err = 0
     idx_err = 0
     for inst_id in range(batch_size):
@@ -61,5 +57,5 @@ def denseViewpointError(preds, labels, num_bins = (50, 50, 25), filter_sigma = 1
             diff = 2.0*np.pi - diff
         err += diff
         idx_err += np.linalg.norm(np.array(pred_max_idx) - np.array(label_max_idx))
-        
-    return err/batch_size, idx_err/batch_size
+    
+    return err/batch_size, idx_err/batch_si

@@ -8,7 +8,6 @@ Created on Wed Feb 21 13:10:29 2018
 import numpy as np
 
 import torch
-from torch.autograd import Variable
 from generic_pose.losses.quaternion_loss import (quaternionLoss, 
                                                  quaternionError, 
                                                  loopConsistencyLoss,
@@ -18,19 +17,8 @@ from generic_pose.losses.quaternion_loss import (quaternionLoss,
                                                  axisError)
 
 from generic_pose.losses.viewpoint_loss import ViewpointLoss, denseViewpointError, dotLoss
-
+from generic_pose.utils import to_np, to_var
 class_loss = ViewpointLoss()
-
-def to_np(x):
-    if torch.is_tensor(x):
-        return x.cpu().numpy()
-    else:
-        return x.data.cpu().numpy()
-
-def to_var(x):
-    if torch.cuda.is_available():
-        x = x.cuda()
-    return Variable(x)
 
 def evaluatePairReg(model, origin, query, quat_true,
                     optimizer=None, retain_graph = False, 

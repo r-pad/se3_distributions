@@ -10,14 +10,13 @@ from itertools import repeat
 import torch.nn.functional as F
 import generic_pose.utils.transformations as tf_trans
 from generic_pose.training.utils import to_var, to_np
-from generic_pose.utils.data_preprocessing import (resizeAndPad, 
+from generic_pose.utils.image_preprocessing import (resizeAndPad, 
                                                    cropAndResize, 
-                                                   transparentOverlay, 
-                                                   quatDiff, 
-                                                   quatAngularDiff,
-                                                   quat2AxisAngle)
+                                                   transparentOverlay) 
 
-from generic_pose.losses.viewpoint_loss import ViewpointLoss, denseViewpointError, dotLoss
+from quat_math import quatDiff, quatAngularDiff, quat2AxisAngle
+
+from generic_pose.losses.viewpoint_loss import ViewpointLoss, dotLoss
 class_loss = ViewpointLoss()
 
 def topClass(delta_angle, class_est, use_max = True):

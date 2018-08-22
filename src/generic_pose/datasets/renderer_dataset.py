@@ -13,16 +13,12 @@ import torchvision.transforms as transforms
 
 import glob
 
-#from generic_pose.utils.pose_renderer import renderView
-from model_renderer.pose_renderer import renderView
+#from generic_pose.utils.syscall_renderer import renderView
+from model_renderer.syscall_renderer import renderView
 import generic_pose.utils.transformations as tf_trans
-from generic_pose.utils.data_preprocessing import (label2DenseWeights, 
-                                                   resizeAndPad, 
-                                                   uniformRandomQuaternion, 
-                                                   transparentOverlay, 
-                                                   quat2Uniform, 
-                                                   randomQuatNear, 
-                                                   quatDiff)
+from generic_pose.utils.image_preprocessing import resizeAndPad, transparentOverlay, 
+from quat_math import randomQuatNear, quatDiff
+from quat_math.transformations import random_quaternion
 
 class PoseRendererDataSet(Dataset):
     def __init__(self, model_folders, img_size, 
@@ -113,7 +109,7 @@ class PoseRendererDataSet(Dataset):
             quat_prev = None
             loop_truth = loop_truth[1:]
         else:
-            quat_prev = uniformRandomQuaternion()
+            quat_prev = random_quaternion()
         
         trans_test = []
         it1 = 0
@@ -150,12 +146,12 @@ class PoseRendererDataSet(Dataset):
         
     def generateRotations(self, origin_quat = None):
         if(origin_quat is None):
-            origin_quat = uniformRandomQuaternion()
+            origin_quat = random_quaternion()
             
         if(self.max_orientation_offset is not None):
             query_quat, offset_quat = randomQuatNear(origin_quat, self.max_orientation_offset)
         else:
-            query_quat = uniformRandomQuaternion()
+            query_quat = random_quaternion()
             offset_quat = tf_trans.quaternion_multiply(query_quat, tf_trans.quaternion_conjugate(origin_quat))
         
         if(self.classification):
@@ -169,13 +165,13 @@ class PoseRendererDataSet(Dataset):
     def nextRotation(self, origin_quat = None):
         quats = []
         if(origin_quat is None):
-            origin_quat = uniformRandomQuaternion()
+            origin_quat = random_quaternion()
             quats.append(origin_quat)
             
         if(self.max_orientation_offset is not None):
             query_quat, offset_quat = randomQuatNear(origin_quat, self.max_orientation_offset)
         else:
-            query_quat = uniformRandomQuaternion()
+            query_quat = random_quaternion()
             offset_quat = tf_trans.quaternion_multiply(query_quat, tf_trans.quaternion_conjugate(origin_quat))
         
         quats.append(query_quat)

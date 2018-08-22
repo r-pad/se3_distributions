@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from torch.autograd import Variable
 
-from generic_pose.utils.data_preprocessing import quatAngularDiff, quat2AxisAngle
+from quat_math import quatAngularDiff, quat2AxisAngle
 
 def quaternionLoss(preds, labels, mean = True):
     """
@@ -107,14 +107,19 @@ def axisAngle2Quat(axis_angle, max_angle=np.pi/4.0):
     q[:,3] = cos_th
     return q
 
-def tensor2Angle(q):
+def tensor2Angle(q, normalize=False, compute_axis=False):
+    if(normalize):
+        qn = torch.norm(q, p=2, dim=1)#.detach()
+        q = q.div(qn.unsqueeze(1).expand_as(q))
     q *= torch.sign(q[:,3]).unsqueeze(dim=1)
     q[:,3] = torch.clamp(q[:,3],max=1.0)
 
     angle = 2*torch.acos(q[:,3])
-    axis = q[:,:3].div(angle.unsqueeze(1).expand_as(q[:,:3]))
-    
-    return axis, angle
+    if(compute_axis):
+        axis = q[:,:3].div(angle.unsqueeze(1).expand_as(q[:,:3]))
+        return axis, angle
+    else:
+        return angle
     
 def quaternionError(preds, labels):
     batch_size = preds.size(0)

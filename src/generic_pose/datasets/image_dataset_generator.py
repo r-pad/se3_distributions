@@ -9,7 +9,7 @@ import glob
 import numpy as np
 
 #import quaternions as quat
-from generic_pose.utils.pose_renderer import camera2quat
+from generic_pose.utils.syscall_renderer import camera2quat
 import generic_pose.utils.transformations as tf_trans
 
 #filepath = os.path.realpath(__file__)

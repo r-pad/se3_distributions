@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 
 import os
 
-from generic_pose.datasets.image_dataset import PoseImageDataSet
+from generic_pose.datasets.numpy_dataset import NumpyImageDataset
 
 from generic_pose.training.utils import to_np
 from generic_pose.training.binary_angle_utils import evaluateBinaryEstimate
@@ -47,7 +47,7 @@ class BinaryAngleTrainer(object):
         self.target_angle = target_angle
         self.cross_model_eval = cross_model_eval
 
-        self.train_loader = DataLoader(PoseImageDataSet(data_folders=train_data_folder,
+        self.train_loader = DataLoader(NumpyImageDataset(data_folders=train_data_folder,
                                                img_size = img_size,
                                                max_orientation_offset = None,
                                                max_orientation_iters = max_orientation_iters,
@@ -65,7 +65,7 @@ class BinaryAngleTrainer(object):
         self.valid_loaders = []
         
         if(valid_class_folder is not None):
-            self.valid_class_loader = DataLoader(PoseImageDataSet(data_folders=valid_class_folder,
+            self.valid_class_loader = DataLoader(NumpyImageDataset(data_folders=valid_class_folder,
                                                    img_size = img_size,
                                                    max_orientation_offset = None,
                                                    max_orientation_iters = max_orientation_iters,
@@ -82,7 +82,7 @@ class BinaryAngleTrainer(object):
             self.valid_loaders.append(self.valid_class_loader)
 
         if(valid_model_folder is not None):
-            self.valid_model_loader = DataLoader(PoseImageDataSet(data_folders=valid_model_folder,
+            self.valid_model_loader = DataLoader(NumpyImageDataset(data_folders=valid_model_folder,
                                                    img_size = img_size,
                                                    max_orientation_offset = None,
                                                    max_orientation_iters = max_orientation_iters,
@@ -99,7 +99,7 @@ class BinaryAngleTrainer(object):
             self.valid_loaders.append(self.valid_model_loader)
         
         if(valid_pose_folder is not None):
-            self.valid_pose_loader = DataLoader(PoseImageDataSet(data_folders=valid_pose_folder,
+            self.valid_pose_loader = DataLoader(NumpyImageDataset(data_folders=valid_pose_folder,
                                                    img_size = img_size,
                                                    max_orientation_offset = None,
                                                    max_orientation_iters = max_orientation_iters,
@@ -262,7 +262,7 @@ def main():
 
     parser.add_argument('--loss_type', type=str, default='BCE')
 
-    parser.add_argument('--target_angle', type=float, default=np.pi/4)
+    parser.add_argument('--target_angle', type=float, default=45.0)
     parser.add_argument('--max_orientation_iters', type=int, default=200)
 
     parser.add_argument('--cross_model_eval', dest='cross_model_eval', action='store_true')    
@@ -320,7 +320,7 @@ def main():
                                  valid_model_folder = args.valid_model_folder,
                                  valid_pose_folder = args.valid_pose_folder,
                                  img_size = (args.width,args.height),
-                                 target_angle = args.target_angle,
+                                 target_angle = args.target_angle*np.pi/180.0,
                                  max_orientation_iters = args.max_orientation_iters,
                                  batch_size = args.batch_size,
                                  num_workers = args.num_workers,

@@ -11,151 +11,69 @@ import torch
 from torch.utils.data import Dataset
 import torchvision.transforms as transforms
 
-import os
-import glob
+from generic_pose.utils.image_preprocessing import preprocessImages
+from quat_math import quatDiff, quatAngularDiff, angularPDF, invAngularPDF
 
-from generic_pose.utils.data_preprocessing import (label2DenseWeights, 
-                                                   quat2Uniform, 
-                                                   resizeAndPad, 
-                                                   cropAndResize, 
-                                                   transparentOverlay, 
-                                                   quatDiff, 
-                                                   quatAngularDiff)
-
-_datasets_dir = os.path.dirname(os.path.abspath(__file__))
-
-class PoseImageDataSet(Dataset):
-    def __init__(self, data_folders,
+class PoseImageDataset(Dataset):
+    def __init__(self, 
                  img_size,
                  crop_percent = None,
                  max_orientation_offset = None,
                  max_orientation_iters = 200,
-                 model_filenames = None,
+                 rejection_thresh_angle = None,
                  background_filenames = None,
-                 classification = True,
-                 num_bins = (50, 50, 25),
-                 distance_sigma = 5,
-                 num_model_imgs = float('inf')):
+                 *args, **kwargs):
 
-        super(PoseImageDataSet, self).__init__()
+        super(PoseImageDataset, self).__init__()
         
         self.img_size = img_size
         self.crop_percent = crop_percent
         self.max_orientation_offset = max_orientation_offset   
         self.max_orientation_iters = max_orientation_iters
-        
-        self.classification = classification        
-        self.num_bins = num_bins
-        self.distance_sigma = distance_sigma
-
-        self.model_filenames = model_filenames
-        self.background_filenames = background_filenames
-                    
-        self.class_bins = num_bins
-    
-        self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                              std=[0.229, 0.224, 0.225])
-        self.to_tensor = transforms.ToTensor()
-
-        self.loop_truth = []
-
-        if(type(data_folders) is str and data_folders[-4:] == '.txt'):
-            with open(data_folders, 'r') as f:    
-                data_folders = f.read().split()
-
-        if(type(data_folders) is list):
-            files = []
-            for folder in data_folders:
-                files.extend(glob.glob(folder + '/**/*.png', recursive=True))
-        elif(type(data_folders) is str):
-            files = glob.glob(data_folders + '/**/*.png', recursive=True)
+        if(rejection_thresh_angle is not None):
+            self.rejection_thresh = angularPDF(rejection_thresh_angle)
         else:
-            raise AssertionError('Invalid data_folders type {}'.format(type(data_folders)))
-
-        #print('{} files in {}'.format(len(files), data_folders))
-        self.data_filenames = []
-        self.data_models = []
-        self.data_model_list_idx = []
-        self.data_classes = []
-
-        self.model_idxs = {}
-        self.model_class = {}
-        self.class_idxs = {}
-        
-        for j, path in enumerate(files):
-            if(j >= num_model_imgs):
-                break
-            
-            [model_class, model, filename] = '.'.join(path.split('.')[:-1]).split('/')[-3:]
-
-            if(model_class in self.class_idxs):
-                self.class_idxs[model_class].append(model)
-            else:
-                self.class_idxs[model_class] = [model]
-                self.model_class[model] = model_class
-
-            if(model in self.model_idxs):
-                self.model_idxs[model].append(j)
-            else:
-                self.model_idxs[model] = [j]
-            
-            self.data_filenames.append('.'.join(path.split('.')[:-1]))
-            self.data_models.append(model)
-            self.data_model_list_idx.append(len(self.model_idxs[model]) - 1)
-            self.data_classes.append(model_class)
+            self.rejection_thresh = None
+        self.background_filenames = background_filenames
+    
+        self.loop_truth = [1,1]
 
     def __getitem__(self, index):
-        if(len(self.loop_truth) < 2):
+        if(self.loop_truth is None):
             return self.getPair(index)
         else:
             return self.getLoop(index, loop_truth=self.loop_truth)
 
-    def getPairIndex(self, index, origin_quat):
-        model = self.data_models[index]
-        #model_list_idx = self.data_model_list_idx[index]
-        
-        assert len(self.model_idxs[model]) > 1, "Model must have > 1 view (model: {})".format(model)
+    def getPairIndex(self, model, origin_quat):
+        assert len(self.model_idxs[model]) > 0, "Model must have > 1 view (model: {})".format(model)
         for j in range(self.max_orientation_iters):
-            query_idx = self.model_idxs[model][np.random.randint(0, len(self.model_idxs[model]))]
-            query_quat = np.load(self.data_filenames[query_idx] + '.npy')
-            if(self.max_orientation_offset is None or quatAngularDiff(query_quat, origin_quat) < self.max_orientation_offset):
+            query_idx = self.model_idxs[model][np.random.randint(len(self.model_idxs[model]))]
+            query_quat = self.getQuat(query_idx)
+            if(self.max_orientation_offset is None and self.rejection_thresh is None):
                 break
+            else:
+                angle_diff = quatAngularDiff(query_quat, origin_quat)
+                if(self.max_orientation_offset is not None 
+                   and angle_diff < self.max_orientation_offset):
+                    break
+                if(self.rejection_thresh is not None
+                   and invAngularPDF(angle_diff, self.rejection_thresh) > np.random.rand()):
+                    break
         return query_idx, query_quat
-            
+
     def getPair(self, index):
+        origin_quat = self.getQuat(index)
+        origin_img = self.getImage(index)
+
         model = self.data_models[index]
+        query_idx, query_quat = self.getPairIndex(model, origin_quat)
+        
+        query_img = self.getImage(query_idx)
 
-        # Rotations
-        origin_quat = np.load(self.data_filenames[index] + '.npy')
+        offset_quat = quatDiff(query_quats, origin_quats)
+        return origin_img, query_img, offset_quat
 
-        query_idx, query_quat = self.getPairIndex(index, origin_quat)
-        
-        # Images
-        origin_img = self.preprocessImages(cv2.imread(self.data_filenames[index] + '.png', cv2.IMREAD_UNCHANGED), normalized_tensor=True)
-        query_img  = self.preprocessImages(cv2.imread(self.data_filenames[query_idx] + '.png', cv2.IMREAD_UNCHANGED), normalized_tensor=True)
-        
-
-        offset_quat = quatDiff(query_quat, origin_quat)
-        offset_u = quat2Uniform(offset_quat)
-        
-        if(type(self.model_filenames) is dict):
-            model_file = self.model_filenames[model]
-        elif(type(self.model_filenames) is str):
-            model_file = self.model_filenames
-        else:
-            model_file = ''
-
-        if(self.classification):
-            offset_class = label2DenseWeights(offset_u, (self.num_bins[0],self.num_bins[1],self.num_bins[2]), self.distance_sigma)
-        else:
-            offset_class = np.zeros(1)
-        
-        offset_quat = torch.from_numpy(offset_quat)
-        offset_class = torch.from_numpy(offset_class)                          
-        
-        return origin_img, query_img, offset_quat, offset_class, origin_quat, model_file
- 
-    def getLoop(self, index, loop_truth=[1,0,0]):
+    def getLoop(self, index, loop_truth=[1,0]):
         images = []
         models = []
         model_files = []
@@ -163,14 +81,14 @@ class PoseImageDataSet(Dataset):
         trans = []
         
         for j, truth in enumerate(loop_truth):
-            img = cv2.imread(self.data_filenames[index] + '.png', cv2.IMREAD_UNCHANGED)
+            img = self.getImage(index)
             while(img is None):
-                print('None Image {}: {}'.format(index, self.data_filenames[index] + '.png'))
-                index = np.random.randint(len(self.data_filenames))
-                img = cv2.imread(self.data_filenames[index] + '.png', cv2.IMREAD_UNCHANGED)
-            
+                print('None image at index {}'.format(index))
+                index = np.random.randint(len(self))
+                img = self.getImage(index)
+
             model = self.data_models[index]
-            images.append(self.preprocessImages(img, normalized_tensor=True))
+            images.append(img)
             models.append(model)
             
             if(type(self.model_filenames) is dict):
@@ -180,56 +98,27 @@ class PoseImageDataSet(Dataset):
             else:
                 model_files.append('')
             
-            if(os.path.exists(self.data_filenames[index] + '.npy')):
-                quats.append(np.load(self.data_filenames[index] + '.npy'))
-            else:
-                quats.append(np.zeros(4))
+            quats.append(self.getQuat(index))
 
-            if(truth or len(self.model_idxs.keys()) == 1):
-                #model_list_idx = self.data_model_list_idx[index]
-                #assert len(self.model_idxs[model]) > 1, "Model must have > 1 view (model: {})".format(model)
-                index = self.model_idxs[model][np.random.randint(0, len(self.model_idxs[model]))]
-                index, _ = self.getPairIndex(index, quats[-1])
-            else:
-                model = np.random.choice(list(set(self.model_idxs.keys()) ^ set([model])))
-                index = np.random.choice(self.model_idxs[model])
+            if(j < len(loop_truth)-1):
+                if(truth or len(self.model_idxs.keys()) == 1):
+                    index, _ = self.getPairIndex(model, quats[-1])
+                else:
+                    model = np.random.choice(list(set(self.model_idxs.keys()) ^ set([model])))
+                    index = np.random.choice(self.model_idxs[model])
 
             if(j > 0):
-                #if(models[j] == models[j-1]):
                 trans.append(quatDiff(quats[j], quats[j-1]))
-                #else:
-                #    trans.append(np.zeros(4))
 
-        #if(models[0] == models[-1]):
         trans.append(quatDiff(quats[0], quats[-1]))
-        #else:
-            # Might need to change based on how torch handles this
-        #    trans.append(np.zeros(4))
 
         return images, trans, quats, models, model_files
  
-    def preprocessImages(self, image, normalized_tensor = False):
-        if(self.background_filenames is not None):
-            bg_idx = np.random.randint(0, len(self.background_filenames))
-            background = cv2.imread(self.background_filenames[bg_idx])
-        else:
-            background = None
-
-        if (len(image.shape) == 2):
-            image = np.expand_dims(image, axis=2)
-        
-        if(image.shape[2] == 4):
-            image = transparentOverlay(image, background)
-        
-        if(self.crop_percent is not None):
-            image = cropAndResize(image, self.img_size, self.crop_percent)
-        else:
-            image = resizeAndPad(image, self.img_size)
-        
-        if(normalized_tensor):
-            image = self.normalize(self.to_tensor(image))
-
-        return image
+    def preprocessImages(self, image, normalize_tensor = False):
+        return preprocessImages([image], self.img_size,
+                                normalize_tensors = normalize_tensor,
+                                background_filenames = self.background_filenames,
+                                crop_percent = self.crop_percent)[0]
 
     def __len__(self):
-        return len(self.data_filenames)
+        raise NotImplementedError()

@@ -10,15 +10,13 @@ import numpy as np
 import torch
 import torchvision.transforms as transforms
 
-from model_renderer.pose_renderer import renderView
+from model_renderer.syscall_renderer import renderView
 
 from generic_pose.training.utils import to_var, to_np
-from generic_pose.utils.data_preprocessing import (resizeAndPad, 
-                                                   cropAndResize, 
-                                                   transparentOverlay, 
-                                                   quatDiff, 
-                                                   quatAngularDiff,
-                                                   quat2AxisAngle)
+from generic_pose.utils.image_preprocessing import (resizeAndPad, 
+                                                    cropAndResize, 
+                                                    transparentOverlay)
+from quat_math import quatDiff, quatAngularDiff, quat2AxisAngle
 
 import generic_pose.utils.transformations as tf_trans
 from generic_pose.models.pose_networks import gen_pose_net
