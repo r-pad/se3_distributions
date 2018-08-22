@@ -11,7 +11,7 @@ setup(
     package_dir={'': 'src'},
     description='Estimate poses of image pairs',
     long_description=open('README.md').read(),
-    package_data = {'': ['*.blend',]},
+    package_data = {'': ['*.blend','*.npy']},
 )
 
 
