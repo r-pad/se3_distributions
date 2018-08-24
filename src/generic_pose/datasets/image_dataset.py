@@ -120,5 +120,10 @@ class PoseImageDataset(Dataset):
                                 background_filenames = self.background_filenames,
                                 crop_percent = self.crop_percent)[0]
 
+    def getQuat(self, index):
+        raise NotImplementedError('getQuat must be implemented by child classes')
+    def getImage(self, index):
+        raise NotImplementedError('getImage must be implemented by child classes')
     def __len__(self):
-        raise NotImplementedError()
+        raise NotImplementedError('__len__ must be implemented by child classes')
+
