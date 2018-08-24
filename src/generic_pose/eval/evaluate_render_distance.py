@@ -9,7 +9,7 @@ import numpy as np
 import cv2
 
 from generic_pose.utils.image_preprocessing import unprocessImages
-from generic_pose.eval.hyper_distance import ExemplarDistPoseEstimator, vert600
+from generic_pose.eval.hyper_distance import ExemplarDistPoseEstimator 
 from quat_math import (quatAngularDiff,
                        quat2AxisAngle, 
                        quaternion_about_axis, 
@@ -43,7 +43,7 @@ def evaluateDistanceNetwork(estimator, data_loader, trans_mat=np.eye(4),
     def trueDiff(q):
         q_adj = convertQuat(q)
         true_diff = []
-        for v in vert600:
+        for v in estimator.base_vertices:
             true_diff.append(quatAngularDiff(q_adj, v))
         return np.array(true_diff)
 
@@ -65,6 +65,7 @@ def evaluateDistanceNetwork(estimator, data_loader, trans_mat=np.eye(4),
 
     for j, (imgs, _, quats, _, _) in enumerate(data_loader):
         diff = estimator.estimate(imgs[0], preprocess=False) 
+        diff = to_np(diff.detach())
         true_dist = trueDiff(to_np(quats[0][0]))
         top_idx = np.argmin(sign*diff)
         true_idx = np.argmin(true_dist)
@@ -84,24 +85,24 @@ def evaluateDistanceNetwork(estimator, data_loader, trans_mat=np.eye(4),
         #print('Top scored ranking: {}'.format(np.nonzero(np.argsort(true_dist) == top_idx)[0][0]))   
         #print('Top distance: {}'.format(true_dist[top_idx]*180/np.pi))
         if(rank_gt < 5):
-            top_img = unprocessImages(estimator.rend600[top_idx:top_idx+1])[0]
+            top_img = unprocessImages(estimator.base_renders[top_idx:top_idx+1])[0]
             tgt_img = unprocessImages(imgs[0])[0]
-            gt_img  = unprocessImages(estimator.rend600[true_idx:true_idx+1])[0]
+            gt_img  = unprocessImages(estimator.base_renders[true_idx:true_idx+1])[0]
             gt_pos_images = [top_img, tgt_img, gt_img, j]
         elif(rank_gt > 55):
-            top_img = unprocessImages(estimator.rend600[top_idx:top_idx+1])[0]
+            top_img = unprocessImages(estimator.base_renders[top_idx:top_idx+1])[0]
             tgt_img = unprocessImages(imgs[0])[0]
-            gt_img  = unprocessImages(estimator.rend600[true_idx:true_idx+1])[0]
+            gt_img  = unprocessImages(estimator.base_renders[true_idx:true_idx+1])[0]
             gt_neg_images = [top_img, tgt_img, gt_img, j]
         elif(rank_top < 5):
-            top_img = unprocessImages(estimator.rend600[top_idx:top_idx+1])[0]
+            top_img = unprocessImages(estimator.base_renders[top_idx:top_idx+1])[0]
             tgt_img = unprocessImages(imgs[0])[0]
-            gt_img  = unprocessImages(estimator.rend600[true_idx:true_idx+1])[0]
+            gt_img  = unprocessImages(estimator.base_renders[true_idx:true_idx+1])[0]
             top_pos_images = [top_img, tgt_img, gt_img, j]
         elif(rank_top > 5):
-            top_img = unprocessImages(estimator.rend600[top_idx:top_idx+1])[0]
+            top_img = unprocessImages(estimator.base_renders[top_idx:top_idx+1])[0]
             tgt_img = unprocessImages(imgs[0])[0]
-            gt_img  = unprocessImages(estimator.rend600[true_idx:true_idx+1])[0]
+            gt_img  = unprocessImages(estimator.base_renders[true_idx:true_idx+1])[0]
             top_neg_images = [top_img, tgt_img, gt_img, j]
 
         #input("Press Enter to continue...")
@@ -178,7 +179,7 @@ def main(weight_file,
     from torch.utils.data import DataLoader
     from generic_pose.models.pose_networks import gen_pose_net
     
-  
+    print(results_prefix)
     t = time.time()
     dist_net = gen_pose_net(model_type.lower(), 
                             compare_type.lower(), 
@@ -186,7 +187,7 @@ def main(weight_file,
                             pretrained = False)
 
     dist_net.load_state_dict(torch.load(weight_file))
-    print('Weights load time: {}s'.format(round(time.time()-t, 2)))
+    #print('Weights load time: {}s'.format(round(time.time()-t, 2)))
 
     if(dataset_type.lower() == 'numpy'):
         from generic_pose.datasets.numpy_dataset import NumpyImageDataset as Dataset
@@ -211,7 +212,7 @@ def main(weight_file,
                              shuffle=True)
 
     data_loader.dataset.loop_truth = [1]
-    print('Dataset initialization time: {}s'.format(round(time.time()-t, 2)))
+    #print('Dataset initialization time: {}s'.format(round(time.time()-t, 2)))
 
     if('cam/mesh.ply' in model_filename or 
        'eggbox/mesh.ply' in model_filename):
@@ -223,7 +224,7 @@ def main(weight_file,
     else:
         trans_mat = np.eye(4)
 
-    estimator = ExemplarDistPoseEstimator(model_filename, dist_net, base_level=base_level)
+    estimator = ExemplarDistPoseEstimator(model_filename, dist_net, use_bpy_renderer = True, base_level=base_level)
     res = evaluateDistanceNetwork(estimator, data_loader, trans_mat, 
                                   inverse_distance = inverse_distance,
                                   use_converter = 'linemod' in dataset_type.lower())
