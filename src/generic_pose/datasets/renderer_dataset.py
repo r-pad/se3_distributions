@@ -188,7 +188,9 @@ class PoseRendererDataSet(Dataset):
         model_filename = self.model_filenames[index]
 
         # Will need to make distance random at some point
-        rendered_imgs = renderView(model_filename, render_quats, self.camera_dist, standard_lighting=not self.randomize_lighting)
+        rendered_imgs = renderView(model_filename, render_quats, 
+                                   camera_dist=self.camera_dist, 
+                                   standard_lighting=not self.randomize_lighting)
         
         images = [self.normalize(self.to_tensor(self.preprocessImages(img))) for img in rendered_imgs]
         return images, model_filename

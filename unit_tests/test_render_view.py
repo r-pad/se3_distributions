@@ -17,17 +17,17 @@ def testRenderView():
     model_file = '/scratch/bokorn/data/models/035_power_drill/google_64k/textured.obj'
 
     t = time.time()
-    img2 = renderView(model_file, pose_quats, camera_dist, debug_mode=False)
+    img2 = renderView(model_file, pose_quats,  camera_dist=camera_dist debug_mode=False)
     print('Render time 2: ', time.time() - t)
     
     pose_quats = [pose]*20
     t = time.time()
-    img20 = renderView(model_file, pose_quats, camera_dist, debug_mode=False)
+    img20 = renderView(model_file, pose_quats,  camera_dist=camera_dist debug_mode=False)
     print('Render time 20: ', time.time() - t)
 
     pose_quats = [pose]*200
     t = time.time()
-    img200 = renderView(model_file, pose_quats, camera_dist, debug_mode=False)
+    img200 = renderView(model_file, pose_quats,  camera_dist=camera_dist debug_mode=False)
     print('Render time 20: ', time.time() - t)
     import IPython; IPython.embed()
 

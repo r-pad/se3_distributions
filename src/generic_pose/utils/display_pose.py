@@ -219,7 +219,7 @@ def renderQuaternions(origin_imgs, query_imgs,
 
         #q = tf_trans.quaternion_multiply(init_q, tf_trans.quaternion_multiply(est_q, origin_quats[j]))
         q = tf_trans.quaternion_multiply(est_q, origin_quats[j])
-        render_img = renderView(model_files[j], [tf_trans.quaternion_multiply(init_q,q)], camera_dist, standard_lighting=True)
+        render_img = renderView(model_files[j], [tf_trans.quaternion_multiply(init_q,q)], camera_dist=camera_dist, standard_lighting=True)
         if(len(render_img) == 0):
             continue;
         render_img = transparentOverlay(render_img[0])/255.0
