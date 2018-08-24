@@ -9,7 +9,8 @@ import numpy as np
 import cv2
 
 from generic_pose.utils.image_preprocessing import unprocessImages
-from generic_pose.eval.hyper_distance import ExemplarDistPoseEstimator, vert600
+from generic_pose.utils import to_np
+
 from quat_math import (quatAngularDiff,
                        quat2AxisAngle, 
                        quaternion_about_axis, 
@@ -17,11 +18,12 @@ from quat_math import (quatAngularDiff,
                        quaternion_inverse,
                        quaternion_from_matrix)
 
-from generic_pose.utils import to_np
+from model_renderer.syscall_renderer import renderView
 
 delta_quat = np.array([.5,.5,.5,.5])
 
-def render_check(estimator, data_loader, trans_mat = np.eye(4), use_converter = False):
+def render_check(data_loader, model_filename, image_prefix,
+                 trans_mat = np.eye(4), use_converter = False):
 
     trans_quat = quaternion_inverse(quaternion_from_matrix(trans_mat))
     
@@ -71,22 +73,16 @@ def render_check(estimator, data_loader, trans_mat = np.eye(4), use_converter = 
             img_z  = imgs[0]
             quat_z = to_np(quats[0][0]).copy()
 
-    cv2.imwrite('/home/bokorn/results/test/0.png', unprocessImages(img_0)[0])
-    cv2.imwrite('/home/bokorn/results/test/x.png', unprocessImages(img_x)[0])
-    cv2.imwrite('/home/bokorn/results/test/y.png', unprocessImages(img_y)[0])
-    cv2.imwrite('/home/bokorn/results/test/z.png', unprocessImages(img_z)[0])
+    cv2.imwrite(image_prefix + '0.png', unprocessImages(img_0)[0])
+    cv2.imwrite(image_prefix + 'x.png', unprocessImages(img_x)[0])
+    cv2.imwrite(image_prefix + 'y.png', unprocessImages(img_y)[0])
+    cv2.imwrite(image_prefix + 'z.png', unprocessImages(img_z)[0])
 
-    cv2.imwrite('/home/bokorn/results/test/r0.png', estimator.renderPoses([convertQuat(quat_0)])[0])
-    cv2.imwrite('/home/bokorn/results/test/rx.png', estimator.renderPoses([convertQuat(quat_x)])[0])
-    cv2.imwrite('/home/bokorn/results/test/ry.png', estimator.renderPoses([convertQuat(quat_y)])[0])
-    cv2.imwrite('/home/bokorn/results/test/rz.png', estimator.renderPoses([convertQuat(quat_z)])[0])
-
-#    cv2.imwrite('/home/bokorn/results/test/b0.png', estimator.renderPoses([quat_0])[0])
-#    cv2.imwrite('/home/bokorn/results/test/bx.png', estimator.renderPoses([quat_x])[0])
-#    cv2.imwrite('/home/bokorn/results/test/by.png', estimator.renderPoses([quat_y])[0])
-#    cv2.imwrite('/home/bokorn/results/test/bz.png', estimator.renderPoses([quat_z])[0])
-    import IPython; IPython.embed()
-    
+    cv2.imwrite(image_prefix + 'r0.png', renderView(model_filename, [convertQuat(quat_0)])[0])
+    cv2.imwrite(image_prefix + 'rx.png', renderView(model_filename, [convertQuat(quat_x)])[0])
+    cv2.imwrite(image_prefix + 'ry.png', renderView(model_filename, [convertQuat(quat_y)])[0])
+    cv2.imwrite(image_prefix + 'rz.png', renderView(model_filename, [convertQuat(quat_z)])[0])
+   
 def main():
     import time
     import cv2
@@ -155,18 +151,12 @@ def main():
     data_loader.dataset.loop_truth = [1]
     print('Dataset initialization time: {}s'.format(round(time.time()-t, 2)))
 
-    if(args.model_filename is None and 'linemod' in args.dataset_type.lower()):
+    if(args.model_filename is None):
         _, _, _, _, model_filenames = next(iter(data_loader))
         args.model_filename = model_filenames[0][0] 
-    else:
-        model_class, model_name = args.data_folder.split('/')[-3:-1]
-        if(model_class == 'linemod'):
-            args.model_filename = '/scratch/bokorn/data/benchmarks/linemod/' + \
-                                  '{}/mesh.ply'.format(model_name)
-        else:
-            args.model_filename = '/scratch/bokorn/data/models/shapenetcore/' + \
-                                  '{}/{}/model.obj'.format(model_class, model_name)
-
+    if(args.model_filename is None or len(args.model_filename)):
+        raise ValueError('Model filename required for this dataset')
+    
     if('cam/mesh.ply' in args.model_filename or 
        'eggbox/mesh.ply' in args.model_filename):
         trans_filename = args.model_filename.replace('mesh.ply', 'transform.dat')

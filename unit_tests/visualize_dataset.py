@@ -1,28 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-Created on Fri Jun 22 14:15:38 2018
-
 @author: bokorn
 """
 import cv2
+import time
 import numpy as np
 
 import torch
 from torch.utils.data import DataLoader
 
-from generic_pose.training.binary_angle_utils import evaluateBinaryEstimate
 from generic_pose.training.utils import to_np
+from generic_pose.training.utils.image_preprocessing import unprocessImages
 from quat_math import quat2AxisAngle
-
-import time
-
-norm_mean = np.array([0.485, 0.456, 0.406])
-norm_std = np.array([0.229, 0.224, 0.225])
-
-def unprocessImages(imgs):
-    imgs = np.transpose(to_np(imgs), (0,2,3,1))
-    imgs = np.minimum(np.maximum(imgs*norm_std + norm_mean, 0.0), 1.0)*255
-    return imgs
 
 def visualize(data_set, 
               image_prefix,
@@ -86,7 +75,6 @@ def main():
     print('Dataset initialization time: {}s'.format(round(time.time()-t, 2)))
 
     t = time.time()
-    import IPython; IPython.embed()
     visualize(dataset, args.results_prefix, num_samples=args.num_samples)
    
 if __name__=='__main__':

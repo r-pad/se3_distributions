@@ -15,7 +15,7 @@ import time
 
 def timeDataLoader(data_loader,
                    num_batches = 10,
-                   plot_prefix = '/home/bokorn/results/test/'):
+                   plot_prefix = None):
     load_times = []
     t = time.time()
     for j in range(num_batches):
@@ -32,12 +32,12 @@ def timeDataLoader(data_loader,
     print('Min Load Time:  {}'.format(np.min(load_times)))
     print('Max Load Time:  {}'.format(np.max(load_times)))
 
-    plt.plot(load_times)
-
-    plt.xlabel('Batch Index')
-    plt.ylabel('Load Time (s)')
-    plt.savefig(plot_prefix + 'load_times.png')
-    plt.gcf().clear()
+    if(plot_prefix is not None):
+        plt.plot(load_times)
+        plt.xlabel('Batch Index')
+        plt.ylabel('Load Time (s)')
+        plt.savefig(plot_prefix + 'load_times.png')
+        plt.gcf().clear()
 
     return load_times
 
@@ -46,11 +46,11 @@ def main():
     from argparse import ArgumentParser
     
     parser = ArgumentParser()
-    parser.add_argument('--results_prefix', type=str, default='/home/bokorn/results/test/')
     parser.add_argument('--data_folder', type=str)
     parser.add_argument('--dataset_type', type=str, default='numpy')
+    parser.add_argument('--results_prefix', type=str, default = None)
+    
     parser.add_argument('--background_data_file', type=str, default=None)
-
     parser.add_argument('--max_orientation_angle', type=float, default=None)
     parser.add_argument('--max_orientation_iters', type=int, default=200)  
     
@@ -96,7 +96,6 @@ def main():
     t = time.time()
     timeDataLoader(data_loader, num_batches = args.num_batches, 
                    plot_prefix = args.results_prefix)
-    import IPython; IPython.embed()
 
 if __name__=='__main__':
     main()
