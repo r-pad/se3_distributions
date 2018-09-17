@@ -58,7 +58,6 @@ def main():
     import os
     from argparse import ArgumentParser
     from itertools import cycle
-    from generic_pose.models.pose_networks import gen_pose_net
     
     parser = ArgumentParser()
     parser.add_argument('--log_dirs', nargs='+', required=True)
