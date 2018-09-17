@@ -250,7 +250,7 @@ class PoseDistanceTrainer(object):
 def main():
     import datetime
     from argparse import ArgumentParser
-    from generic_pose.models.pose_networks import gen_pose_net
+    from generic_pose.models.pose_networks import gen_pose_net, load_state_dict
     
     parser = ArgumentParser()
 
@@ -280,7 +280,7 @@ def main():
     parser.add_argument('--model_type', type=str, default='alexnet')
     parser.add_argument('--compare_type', type=str, default='sigmoid')
     parser.add_argument('--loss_type', type=str, default='exp')
- 
+    parser.add_argument('--nonsiamese_features', dest='siamese_features', action='store_false')
     parser.add_argument('--random_init', dest='pretrained', action='store_false')    
     
     parser.add_argument('--random_seed', type=int, default=0)
@@ -338,10 +338,11 @@ def main():
     model = gen_pose_net(args.model_type.lower(), 
                          args.compare_type.lower(), 
                          output_dim = 1,
-                         pretrained = args.pretrained)
+                         pretrained = args.pretrained,
+                         siamese_features = args.siamese_features)
 
     if args.weight_file is not None:
-        model.load_state_dict(torch.load(args.weight_file))
+        load_state_dict(model, args.weight_file)
 
     trainer.train(model, results_dir,
                   loss_type = args.loss_type,

@@ -48,8 +48,8 @@ def evaluateDistance(model, origin, query, quat_true,
     if(optimizer is not None):
         optimizer.zero_grad()
 
-    origin_features = model.features(origin)
-    query_features = model.features(query)
+    origin_features = model.origin_features(origin)
+    query_features = model.query_features(query)
     dist_est = model.compare_network(origin_features, 
                                      query_features)
 
