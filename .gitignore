@@ -103,3 +103,13 @@ ENV/
 
 # mypy
 .mypy_cache/
+
+# Local Folders
+training_scripts/all_car
+training_scripts/car1
+training_scripts/car3
+training_scripts/car42
+training_scripts/drill
+training_scripts/linemod
+training_scripts/robot
+training_scripts/shapenet
