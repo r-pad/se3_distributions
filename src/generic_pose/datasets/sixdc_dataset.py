@@ -112,8 +112,8 @@ class SixDCDataset(PoseImageDataset):
             index = self.occludedIdx(index)
         gt = self.test_gt[self.seq][index][self.obj]
         assert(self.obj == gt['obj_id']), 'obj != obj_id'
-        img = load_im(os.path.join(self.data_dir, 'test/{}/rgb/{:04d}.png'.format(self.seq, index)))
-        
+        #img = load_im(os.path.join(self.data_dir, 'test/{}/rgb/{:04d}.png'.format(self.seq, index)))
+        img = cv2.imread(os.path.join(self.data_dir, 'test/{}/rgb/{:04d}.png'.format(self.seq, index)))
         bbox = gt['obj_bb']
         min_bb = np.array([bbox[0], bbox[1]])
         max_bb = np.array([bbox[0]+bbox[2], bbox[1]+bbox[3]])
@@ -132,11 +132,11 @@ class SixDCDataset(PoseImageDataset):
         x0, y0 = min_bb.astype(int)
         if(self.use_mask):
 
-            mask = cv2.imread(os.path.join(self.data_dir, 'test/{}/mask/{:04d}.png'.format(self.seq, index)))
+            mask = cv2.imread(os.path.join(self.data_dir, 'test/{}/mask/{:04d}_{:02d}.png'.format(self.seq, index, self.obj)))
             if(mask is None):
                 mask = self.getMask(index)
             else:
-                mask = np.expand_dims(mask, axis=-1)
+                mask = mask[:,:,:1] #np.expand_dims(mask, axis=-1)
             img = np.concatenate([img, mask], axis=2)
         crop_img = self.preprocessImages(img[y0:y1, x0:x1, :], normalize_tensor = True)
         return crop_img
