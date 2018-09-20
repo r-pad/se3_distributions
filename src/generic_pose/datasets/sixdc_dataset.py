@@ -10,7 +10,7 @@ import numpy as np
 
 from generic_pose.datasets.image_dataset import PoseImageDataset
 import generic_pose.utils.transformations as tf_trans
-from pysixd.inout import load_ply, load_gt, load_cam_params, load_depth, load_im, save_im
+from pysixd.inout import load_ply, load_gt, load_cam_params, load_depth, load_im, save_im, load_yaml
 from pysixd import renderer, misc, visibility
 
 class SingularArray(object):
@@ -34,6 +34,12 @@ class SixDCDataset(PoseImageDataset):
 
         self.model_filenames = {}
         self.test_gt = {}
+        
+        self.model_info = load_yaml(os.path.join(self.data_dir, 'models/models_info.yml'))
+        
+        self.model_scales = {}
+        for k,v in self.model_info.items():
+            self.model_scales[k] = 1/v['diameter']
 
         for j in range(1, 16):
             self.model_filenames[j] = os.path.join(self.data_dir, 'models/obj_{:02d}.ply'.format(j))
@@ -48,8 +54,10 @@ class SixDCDataset(PoseImageDataset):
         
         self.occluded_img_ids = {1:[],2:[],5:[],6:[],8:[],9:[],10:[],11:[],12:[]}
         for j,gt in self.test_gt['02'].items():
-            for k in gt.keys():
+            for k, v in gt.items():
                 self.occluded_img_ids[k].append(j)
+        ####### HACK ########
+        self.occluded_img_ids[10].remove(97)
 
         self.cam = load_cam_params(os.path.join(self.data_dir, 'camera.yml'))
         self.K = self.cam['K']
@@ -115,9 +123,11 @@ class SixDCDataset(PoseImageDataset):
         #img = load_im(os.path.join(self.data_dir, 'test/{}/rgb/{:04d}.png'.format(self.seq, index)))
         img = cv2.imread(os.path.join(self.data_dir, 'test/{}/rgb/{:04d}.png'.format(self.seq, index)))
         bbox = gt['obj_bb']
+        ##cv2.
         min_bb = np.array([bbox[0], bbox[1]])
         max_bb = np.array([bbox[0]+bbox[2], bbox[1]+bbox[3]])
-        
+        min_bb = np.maximum(min_bb, 0)
+        max_bb = np.minimum(max_bb, img.shape[1::-1])
         shape = max_bb - min_bb
         max_dim = max(shape)
         max_bb = max_bb + np.ceil((max_dim - shape)/2) + int(max_dim*boarder_ratio)
@@ -138,7 +148,12 @@ class SixDCDataset(PoseImageDataset):
             else:
                 mask = mask[:,:,:1] #np.expand_dims(mask, axis=-1)
             img = np.concatenate([img, mask], axis=2)
+        print(margin)
+        print(index, bbox)
+        print(y0,y1, x0,x1)
+        print(img.shape)
         crop_img = self.preprocessImages(img[y0:y1, x0:x1, :], normalize_tensor = True)
+        
         return crop_img
 
     def renderMasks(self, index):

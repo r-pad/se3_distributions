@@ -13,7 +13,7 @@ from generic_pose.models.compare_networks import compare_networks
 class GenericPoseNet(nn.Module):
     def __init__(self, feature_network, compare_network):
         super(GenericPoseNet, self).__init__()
-        if(type(feature_network) not in [list, len])
+        if(type(feature_network) not in [list, len]):
             self.origin_network = feature_network
             self.query_network = feature_network
         elif(len(feature_network) == 2):
@@ -64,13 +64,14 @@ def gen_pose_net(feature_type, compare_type, output_dim = 4, pretrained = True, 
     
     return model
 
-def load_state_dict(model, weight_file)
-    weights_dict = torch.load(args.weight_file)
+def load_state_dict(model, weight_file):
+    weights_dict = torch.load(weight_file)
     
-    if(model.origin_network != model.query_network):
-        for k, v in weights_dict.items() 
-            if('feature_network' in k)
-                weights_dict[k.replace('feature_network', 'origin_network')] = v
-
-    model.load_state_dict(args.weight_dict)
-    import IPython; IPython.embed()    
+    if(True or model.origin_network != model.query_network):
+        update_dict = {}
+        for k, v in weights_dict.items(): 
+            if('feature_network' in k):
+                update_dict[k.replace('feature_network', 'origin_network')] = v
+                update_dict[k.replace('feature_network', 'query_network')] = v
+        weights_dict.update(update_dict)
+    model.load_state_dict(weights_dict)

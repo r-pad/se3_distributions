@@ -20,7 +20,8 @@ class ExemplarDistPoseEstimator(object):
     def __init__(self, model_filename, dist_network,
                  img_size = (224,224),
                  use_bpy_renderer=False,
-                 base_level = 0):
+                 base_level = 0,
+                 model_scale = 1.0):
         
         self.img_size = img_size
 
@@ -31,7 +32,7 @@ class ExemplarDistPoseEstimator(object):
         if(use_bpy_renderer):
             from model_renderer.pose_renderer import BpyRenderer
             self.renderer = BpyRenderer()
-            self.renderer.loadModel(model_filename)
+            self.renderer.loadModel(model_filename, model_scale = model_scale, emit = 1.0)
             self.renderPoses = self.renderer.renderPose
         else:
             from model_renderer.syscall_renderer import renderView
@@ -39,7 +40,8 @@ class ExemplarDistPoseEstimator(object):
             self.renderPoses = partial(renderView, 
                                        model_filename,
                                        camera_dist=2,
-                                       standard_lighting=True)
+                                       model_scale = model_scale,
+                                       standard_lighting=-1)
 
         self.base_vertices = np.unique(self.grid.vertices, axis = 0)
         self.base_size = self.base_vertices.shape[0]

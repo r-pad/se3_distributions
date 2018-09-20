@@ -66,7 +66,6 @@ def evaluateDistanceNetwork(estimator, data_loader, trans_mat=np.eye(4),
     for j, (imgs, _, quats, _, _) in enumerate(data_loader):
         diff = estimator.estimate(imgs[0], preprocess=False) 
         diff = to_np(diff.detach())
-        num_verts = diff.shape[0]
         true_dist = trueDiff(to_np(quats[0][0]))
         top_idx = np.argmin(sign*diff)
         true_idx = np.argmin(true_dist)
@@ -85,22 +84,22 @@ def evaluateDistanceNetwork(estimator, data_loader, trans_mat=np.eye(4),
         #print('True ranking: {}'.format(np.nonzero(np.argsort(-diff) == true_idx)[0][0]))
         #print('Top scored ranking: {}'.format(np.nonzero(np.argsort(true_dist) == top_idx)[0][0]))   
         #print('Top distance: {}'.format(true_dist[top_idx]*180/np.pi))
-        if(rank_gt < num_verts*0.05):
+        if(rank_gt < 5):
             top_img = unprocessImages(estimator.base_renders[top_idx:top_idx+1])[0]
             tgt_img = unprocessImages(imgs[0])[0]
             gt_img  = unprocessImages(estimator.base_renders[true_idx:true_idx+1])[0]
             gt_pos_images = [top_img, tgt_img, gt_img, j]
-        elif(rank_gt > num_verts*0.95):
+        elif(rank_gt > 55):
             top_img = unprocessImages(estimator.base_renders[top_idx:top_idx+1])[0]
             tgt_img = unprocessImages(imgs[0])[0]
             gt_img  = unprocessImages(estimator.base_renders[true_idx:true_idx+1])[0]
             gt_neg_images = [top_img, tgt_img, gt_img, j]
-        elif(rank_top < num_verts*0.05):
+        elif(rank_top < 5):
             top_img = unprocessImages(estimator.base_renders[top_idx:top_idx+1])[0]
             tgt_img = unprocessImages(imgs[0])[0]
             gt_img  = unprocessImages(estimator.base_renders[true_idx:true_idx+1])[0]
             top_pos_images = [top_img, tgt_img, gt_img, j]
-        elif(rank_top > num_verts*0.95):
+        elif(rank_top > 5):
             top_img = unprocessImages(estimator.base_renders[top_idx:top_idx+1])[0]
             tgt_img = unprocessImages(imgs[0])[0]
             gt_img  = unprocessImages(estimator.base_renders[true_idx:true_idx+1])[0]
