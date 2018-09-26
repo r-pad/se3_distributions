@@ -30,7 +30,8 @@ def evaluateRenderedDistance(model, grid, renderer,
                              image_chunk_size = 500,
                              feature_chunk_size = 5000,
                              num_indices = 256,
-                             uniform_prop = .5):
+                             uniform_prop = .5,
+                             loss_temperature = None):
     if(loss_type.lower() == 'exp'):
         distanceLoss = partial(expDistanceLoss, falloff_angle=falloff_angle)
         distanceError = partial(expDistanceError, falloff_angle=falloff_angle)
@@ -59,7 +60,8 @@ def evaluateRenderedDistance(model, grid, renderer,
                                                     image_chunk_size = image_chunk_size,
                                                     feature_chunk_size = feature_chunk_size,
                                                     num_indices = num_indices,
-                                                    uniform_prop = uniform_prop)
+                                                    uniform_prop = uniform_prop,
+                                                    loss_temperature = loss_temperature)
     torch.cuda.empty_cache()
     #import IPython; IPython.embed()
         

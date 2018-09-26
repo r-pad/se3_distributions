@@ -89,12 +89,15 @@ class FinetuneDistanceTrainer(object):
 
     def train(self, model, results_dir,
               loss_type = 'exp',
+              num_indices = 256,
+              uniform_prop = 0.5,
+              loss_temperature = None,
               num_epochs = 100000,
               log_every_nth = 100,
               checkpoint_every_nth = 10000,
               lr = 1e-5,
               optimizer = 'SGD',
-              num_display_imgs=1):
+              num_display_imgs=0):
         
         model.train()
         model.cuda()
@@ -152,7 +155,10 @@ class FinetuneDistanceTrainer(object):
                                                          loss_type = loss_type,
                                                          falloff_angle = self.falloff_angle,
                                                          optimizer = self.optimizer, 
-                                                         disp_metrics = log_data)
+                                                         disp_metrics = log_data,
+                                                         num_indices = num_indices,
+                                                         uniform_prop = uniform_prop,
+                                                         loss_temperature = loss_temperature)
 
                 torch.cuda.empty_cache()
                 #import IPython; IPython.embed()
@@ -234,6 +240,9 @@ def main():
     parser.add_argument('--weight_file', type=str, default=None)
     parser.add_argument('--background_data_file', type=str, default=None)
 
+    parser.add_argument('--num_indices', type=int, default=256)
+    parser.add_argument('--uniform_prop', type=float, default=0.5)
+    parser.add_argument('--loss_temperature', type=float, default=None)
     parser.add_argument('--falloff_angle', type=float, default=45.0)
     parser.add_argument('--rejection_thresh_angle', type=float, default=25.0)
     parser.add_argument('--max_orientation_iters', type=int, default=200)
@@ -300,6 +309,9 @@ def main():
 
     trainer.train(model, results_dir,
                   loss_type = args.loss_type,
+                  num_indices = args.num_indices,
+                  uniform_prop = args.uniform_prop,
+                  loss_temperature = args.loss_temperature,
                   num_epochs = args.num_epochs,
                   log_every_nth = args.log_every_nth,
                   lr = args.lr,
