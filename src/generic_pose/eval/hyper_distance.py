@@ -55,9 +55,9 @@ class ExemplarDistPoseEstimator(object):
                 j_srt = j*1500
                 j_end = (j+1)*1500
                 self.base_features.append(to_np(
-                    self.dist_network.features(self.base_renders[j_srt:j_end]).detach()))
+                    self.dist_network.originFeatures(self.base_renders[j_srt:j_end]).detach()))
             self.base_features.append(to_np(
-                self.dist_network.features(self.base_renders[j_end:]).detach()))
+                self.dist_network.originFeatures(self.base_renders[j_end:]).detach()))
             self.base_features = to_var(torch.from_numpy(np.vstack(self.base_features)), 
                                         requires_grad = False)
             torch.cuda.empty_cache()
@@ -72,7 +72,7 @@ class ExemplarDistPoseEstimator(object):
         num_imgs = img.shape[0]
         #img = to_var(img.repeat(60,1,1,1).float())
         #dists = to_np(self.dist_network(self.base_renders, img))
-        query_features = self.dist_network.features(to_var(img.float(), requires_grad=False)).repeat(self.base_size,1)
+        query_features = self.dist_network.queryFeatures(to_var(img.float(), requires_grad=False)).repeat(self.base_size,1)
         dists = self.dist_network.compare_network(self.base_features,
                                                   query_features)
         return dists.flatten() 

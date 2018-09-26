@@ -87,6 +87,12 @@ class SixDCDataset(PoseImageDataset):
     def occludedIdx(self, index):
         return self.occluded_img_ids[self.obj][index]
 
+    def getModelFilename(self):
+        return self.model_filenames[self.obj]
+
+    def getModelScale(self):
+        return self.model_scales[self.obj]
+
     def getQuat(self, index):
         if(self.seq == '02'):
             index = self.occludedIdx(index)
@@ -148,10 +154,10 @@ class SixDCDataset(PoseImageDataset):
             else:
                 mask = mask[:,:,:1] #np.expand_dims(mask, axis=-1)
             img = np.concatenate([img, mask], axis=2)
-        print(margin)
-        print(index, bbox)
-        print(y0,y1, x0,x1)
-        print(img.shape)
+        #print(margin)
+        #print(index, bbox)
+        #print(y0,y1, x0,x1)
+        #print(img.shape)
         crop_img = self.preprocessImages(img[y0:y1, x0:x1, :], normalize_tensor = True)
         
         return crop_img
