@@ -7,11 +7,11 @@ Created on Tues at some point in time
 import os
 import cv2
 import numpy as np
+import torch
 
 from generic_pose.datasets.image_dataset import PoseImageDataset
 import generic_pose.utils.transformations as tf_trans
 from pysixd.inout import load_ply, load_gt, load_cam_params, load_depth, load_im, save_im, load_yaml
-from pysixd import renderer, misc, visibility
 
 class SingularArray(object):
     def __init__(self, value):
@@ -21,12 +21,18 @@ class SingularArray(object):
 
 class SixDCDataset(PoseImageDataset):
     def __init__(self, data_dir, use_mask = True,
+                 holdout_ratio = 0.0,
+                 random_seed = 0,
                  *args, **kwargs):
 
         super(SixDCDataset, self).__init__(*args, **kwargs)
         
         self.data_dir = data_dir
         self.use_mask = use_mask
+        
+        np.random.seed(random_seed)
+        torch.manual_seed(random_seed)
+        torch.cuda.manual_seed_all(random_seed)
 
         self.sequence_names = sorted(next(os.walk(os.path.join(data_dir, 'test')))[1])
         self.occluded_object_ids = [1,2,5,6,8,9,10,11,12]
@@ -34,7 +40,8 @@ class SixDCDataset(PoseImageDataset):
 
         self.model_filenames = {}
         self.test_gt = {}
-        
+        self.primary_idxs = {}
+        self.holdout_idxs = {}
         self.model_info = load_yaml(os.path.join(self.data_dir, 'models/models_info.yml'))
         
         self.model_scales = {}
@@ -51,13 +58,20 @@ class SixDCDataset(PoseImageDataset):
                 self.test_gt[seq][k] = {}
                 for d in v:
                     self.test_gt[seq][k][d['obj_id']] = d
-        
+            seq_size = len(self.test_gt[seq])
+            self.holdout_idxs[seq] = np.random.choice(seq_size, 
+                                                      int(seq_size*holdout_ratio), 
+                                                      replace=False)
+            self.primary_idxs[seq] = np.setdiff1d(np.arange(seq_size), self.holdout_idxs[seq])
+
         self.occluded_img_ids = {1:[],2:[],5:[],6:[],8:[],9:[],10:[],11:[],12:[]}
         for j,gt in self.test_gt['02'].items():
             for k, v in gt.items():
                 self.occluded_img_ids[k].append(j)
+        
         ####### HACK ########
         self.occluded_img_ids[10].remove(97)
+        
 
         self.cam = load_cam_params(os.path.join(self.data_dir, 'camera.yml'))
         self.K = self.cam['K']
@@ -67,7 +81,8 @@ class SixDCDataset(PoseImageDataset):
         self.model_idx = None
         self.data_models = SingularArray(self.obj)
         self.loop_truth = [1]
-
+        self.holdout = False 
+   
     def setSequence(self, seq, obj = None):
         self.seq = '{:02d}'.format(int(seq))
         if(self.seq == '02'):
@@ -93,16 +108,23 @@ class SixDCDataset(PoseImageDataset):
     def getModelScale(self):
         return self.model_scales[self.obj]
 
-    def getQuat(self, index):
+    def getIndex(self, index):
         if(self.seq == '02'):
-            index = self.occludedIdx(index)
+            return self.occludedIdx(index)
+        elif(self.holdout):
+            return self.holdout_idxs[self.seq][index]
+        return self.primary_idxs[self.seq][index]
+
+    def getQuat(self, index):
+        index = self.getIndex(index)
         rot = self.test_gt[self.seq][index][self.obj]['cam_R_m2c']
         mat = np.eye(4)
         mat[:3,:3] = rot
         quat = tf_trans.quaternion_from_matrix(mat)
         return quat
 
-    def getMask(self, index, delta = 15):
+    def renderMask(self, index, delta = 15):
+        #index = self.getIndex(index)
         if(self.model_idx != self.obj):
             self.model = load_ply(self.model_filenames[self.obj])
             self.model_idx = self.obj
@@ -122,8 +144,7 @@ class SixDCDataset(PoseImageDataset):
         return mask
 
     def getImage(self, index, boarder_ratio=0.25):
-        if(self.seq == '02'):
-            index = self.occludedIdx(index)
+        index = self.getIndex(index)
         gt = self.test_gt[self.seq][index][self.obj]
         assert(self.obj == gt['obj_id']), 'obj != obj_id'
         #img = load_im(os.path.join(self.data_dir, 'test/{}/rgb/{:04d}.png'.format(self.seq, index)))
@@ -150,7 +171,7 @@ class SixDCDataset(PoseImageDataset):
 
             mask = cv2.imread(os.path.join(self.data_dir, 'test/{}/mask/{:04d}_{:02d}.png'.format(self.seq, index, self.obj)))
             if(mask is None):
-                mask = self.getMask(index)
+                mask = self.renderMask(index)
             else:
                 mask = mask[:,:,:1] #np.expand_dims(mask, axis=-1)
             img = np.concatenate([img, mask], axis=2)
@@ -162,10 +183,9 @@ class SixDCDataset(PoseImageDataset):
         
         return crop_img
 
-    def renderMasks(self, index):
-        if(self.seq == '02'):
-            index = self.occludedIdx(index)
-        mask = self.getMask(index)
+    def renderAndSaveMask(self, index):
+        index = self.getIndex(index)
+        mask = self.renderMask(index)
         save_im(os.path.join(self.data_dir, 
                     'test/{}/mask/{:04d}_{:02d}.png'.format(self.seq, index, self.obj)),
                     mask)
@@ -173,11 +193,13 @@ class SixDCDataset(PoseImageDataset):
         return mask.astype(float)
 
     def setRenderMasks(self):
-        self.__getitem__ = self.renderMasks
-        self.getImage = self.renderMasks
+        from pysixd import renderer, misc, visibility
+        self.__getitem__ = self.renderAndSaveMask
+        self.getImage = self.renderAndSaveMask
 
     def __len__(self):
         if(self.seq == '02'):
             return len(self.occluded_img_ids[self.obj])
-        else:
-            return len(self.test_gt[self.seq])
+        elif(self.holdout):
+            return len(self.holdout_idxs[self.seq])
+        return len(self.primary_idxs[self.seq])

@@ -36,6 +36,7 @@ class FinetuneDistanceTrainer(object):
                  benchmark_folder,
                  target_object,
                  base_level = 2,
+                 holdout_ratio = 0.0,
                  renders_folder = None,
                  img_size = (224,224),
                  falloff_angle = np.pi/4,
@@ -53,13 +54,15 @@ class FinetuneDistanceTrainer(object):
         self.img_size = img_size
         self.falloff_angle = falloff_angle
         
-        self.sixdc_dataset = SixDCDataset(data_dir=benchmark_folder, img_size=img_size)
+        self.sixdc_dataset = SixDCDataset(data_dir=benchmark_folder, 
+                                          img_size=img_size,
+                                          holdout_ratio = holdout_ratio)
         self.sixdc_dataset.loop_truth = [1]
         self.sixdc_dataset.setSequence('{:02d}'.format(target_object))
         
         self.benchmark_loader = DataLoader(self.sixdc_dataset,
                                            num_workers=num_workers, 
-                                           batch_size=int(batch_size/2), 
+                                           batch_size=int(batch_size), 
                                            shuffle=True)
  
         if(renders_folder is not None):
@@ -84,8 +87,7 @@ class FinetuneDistanceTrainer(object):
                                              img_size = self.img_size,
                                              normalize_tensors = True).float()
 
-        self.valid_types = []
-        self.valid_loaders = []
+        self.holdout = len(self.sixdc_dataset.holdout_idxs[self.sixdc_dataset.seq]) > 0
 
     def train(self, model, results_dir,
               loss_type = 'exp',
@@ -122,12 +124,12 @@ class FinetuneDistanceTrainer(object):
         
         train_logger = Logger(train_log_dir)        
         
-        valid_logger_list = []
-        for valid_name in self.valid_types:
-            valid_log_dir = os.path.join(log_dir,valid_name)
-            if not os.path.exists(valid_log_dir):
-                os.makedirs(valid_log_dir)  
-            valid_logger_list.append(Logger(valid_log_dir))
+        holdout_logger = []
+        if(self.holdout):
+            holdout_log_dir = os.path.join(log_dir,'holdout')
+            if not os.path.exists(holdout_log_dir):
+                os.makedirs(holdout_log_dir)  
+            holdout_logger = Logger(holdout_log_dir)
                     
         weights_dir = os.path.join(results_dir,'weights')
         if not os.path.exists(weights_dir):
@@ -190,30 +192,42 @@ class FinetuneDistanceTrainer(object):
                     #########################################
                     ############ VALIDATION SETS ############
                     #########################################
-                    valid_results = {}
-                    for valid_logger, valid_loader in zip(valid_logger_list, self.valid_loaders):
-                        v_images, v_trans, _, _, _ = next(valid_loader)
-                        
-                        valid_results = evaluateDistance(model, v_images[0], v_images[1], v_trans[0],
-                                                         loss_type = loss_type,
-                                                         falloff_angle = self.falloff_angle,
-                                                         optimizer = None, disp_metrics = True)
+                    holdout_results = {}
+                    if(self.holdout):
+                        self.sixdc_dataset.holdout = True
+                        query_imgs, _1, query_quats, _2, _3 = next(iter(self.benchmark_loader))
+                        del _1[0], _1,  _2[0], _2, _3[0], _3
+                        self.sixdc_dataset.holdout = False
+                        torch.cuda.empty_cache()
+                        holdout_results = evaluateRenderedDistance(model, self.grid, self.renderer,
+                                                                   query_imgs[0], query_quats[0],
+                                                                   self.base_renders, self.base_vertices,
+                                                                   loss_type = loss_type,
+                                                                   falloff_angle = self.falloff_angle,
+                                                                   optimizer = None, 
+                                                                   disp_metrics = True,
+                                                                   num_indices = num_indices,
+                                                                   uniform_prop = uniform_prop,
+                                                                   loss_temperature = loss_temperature)
 
-                        valid_info = {}
-                        for k,v in valid_results.items():
+                        torch.cuda.empty_cache()
+                
+                        
+                        holdout_info = {}
+                        for k,v in holdout_results.items():
                             if('vec' not in k):
-                                valid_info[k] = v
+                                holdout_info[k] = v
                             else:
-                                valid_logger.histo_summary(k,v, cumulative_batch_idx+1)
+                                holdout_logger.histo_summary(k,v, cumulative_batch_idx+1)
 
                        
-                        for tag, value in valid_info.items():
-                            valid_logger.scalar_summary(tag, value, cumulative_batch_idx+1)
+                        for tag, value in holdout_info.items():
+                            holdout_logger.scalar_summary(tag, value, cumulative_batch_idx+1)
                         
                         #gc.collect()
 
-                    if('loss' in valid_results and valid_results['loss'] < min_loss):
-                        min_loss = valid_results['loss']
+                    if('loss' in holdout_results and holdout_results['loss'] < min_loss):
+                        min_loss = holdout_results['loss']
                         weights_filename = os.path.join(weights_dir, 'best_quat.pth')
                         print("saving model ", weights_filename)
                         torch.save(model.state_dict(), weights_filename)                        
@@ -240,14 +254,16 @@ def main():
     parser.add_argument('--weight_file', type=str, default=None)
     parser.add_argument('--background_data_file', type=str, default=None)
 
+    parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--num_indices', type=int, default=256)
     parser.add_argument('--uniform_prop', type=float, default=0.5)
     parser.add_argument('--loss_temperature', type=float, default=None)
+    parser.add_argument('--holdout_ratio', type=float, default=0.0)
+
     parser.add_argument('--falloff_angle', type=float, default=45.0)
     parser.add_argument('--rejection_thresh_angle', type=float, default=25.0)
     parser.add_argument('--max_orientation_iters', type=int, default=200)
 
-    parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--height', type=int, default=224)
     parser.add_argument('--width', type=int, default=224)
@@ -266,7 +282,7 @@ def main():
     parser.add_argument('--results_dir', type=str, default='results/') 
     parser.add_argument('--num_epochs', type=int, default=100000)
     parser.add_argument('--log_every_nth', type=int, default=100)
-    parser.add_argument('--checkpoint_every_nth', type=int, default=10000)
+    parser.add_argument('--checkpoint_every_nth', type=int, default=1000)
     parser.add_argument('--num_display_imgs', type=int, default=0)
 
     args = parser.parse_args()
@@ -281,6 +297,7 @@ def main():
                                       target_object = args.target_object,
                                       renders_folder = args.renders_folder,
                                       img_size = (args.width,args.height),
+                                      holdout_ratio = args.holdout_ratio,
                                       falloff_angle = args.falloff_angle*np.pi/180.0,
                                       rejection_thresh_angle = args.rejection_thresh_angle*np.pi/180.0,
                                       base_level = args.base_level,

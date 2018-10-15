@@ -35,33 +35,38 @@ def evaluateRenderedDistance(model, grid, renderer,
     if(loss_type.lower() == 'exp'):
         distanceLoss = partial(expDistanceLoss, falloff_angle=falloff_angle)
         distanceError = partial(expDistanceError, falloff_angle=falloff_angle)
+        dist_sign = -1.0
     elif(loss_type.lower() == 'log'):
         distanceLoss = partial(logDistanceLoss, falloff_angle=falloff_angle)
         distanceError = partial(logDistanceError, falloff_angle=falloff_angle)
+        dist_sign = 1.0
     elif(loss_type.lower() == 'negexp'):
         distanceLoss = partial(negExpDistanceLoss, falloff_angle=falloff_angle)
         distanceError = partial(negExpDistanceError, falloff_angle=falloff_angle)
+        dist_sign = 1.0
     elif(loss_type.lower() == 'raw'):
         distanceLoss = partial(rawDistanceLoss, falloff_angle=falloff_angle)
         distanceError = partial(rawDistanceError, falloff_angle=falloff_angle)
+        dist_sign = 1.0
     else:
         raise ValueError('Invalid Loss Type: {}'.format(loss_type.lower()))
     model.eval()
 
-    results = {}
     if(optimizer is not None):
         optimizer.zero_grad()
     #print('pre_util')
     #import IPython; IPython.embed()
-    grid_indices, query_indices = hardExampleMining(model,
-                                                    query_imgs, query_quats,
-                                                    grid_imgs, grid_quats,
-                                                    loss_function=distanceLoss,
-                                                    image_chunk_size = image_chunk_size,
-                                                    feature_chunk_size = feature_chunk_size,
-                                                    num_indices = num_indices,
-                                                    uniform_prop = uniform_prop,
-                                                    loss_temperature = loss_temperature)
+    grid_indices, query_indices, results = hardExampleMining(model,
+                                                             query_imgs, query_quats,
+                                                             grid_imgs, grid_quats,
+                                                             loss_function=distanceLoss,
+                                                             image_chunk_size = image_chunk_size,
+                                                             feature_chunk_size = feature_chunk_size,
+                                                             num_indices = num_indices,
+                                                             uniform_prop = uniform_prop,
+                                                             loss_temperature = loss_temperature,
+                                                             disp_metrics = disp_metrics,
+                                                             dist_sign = dist_sign)
     torch.cuda.empty_cache()
     #import IPython; IPython.embed()
         
@@ -73,7 +78,7 @@ def evaluateRenderedDistance(model, grid, renderer,
     grid_features = model.originFeatures(grid_img_samples)
     query_features = model.queryFeatures(query_img_samples)
     dist_est = model.compare_network(grid_features, query_features)
-    loss = distanceLoss(dist_est.flatten(), quat_true, reduce=True)
+    loss = distanceLoss(dist_est.flatten(), quat_true, reduction='elementwise_mean')
 
     if(optimizer is not None):
         model.train()
@@ -112,7 +117,9 @@ def hardExampleMining(model,
                       feature_chunk_size = 5000,
                       num_indices = 32,
                       uniform_prop = .5,
-                      loss_temperature = None):
+                      loss_temperature = None,
+                      disp_metrics = False,
+                      dist_sign = 1.0):
     model.eval()
 
     grid_imgs = to_var(grid_imgs)
@@ -151,7 +158,30 @@ def hardExampleMining(model,
             torch.cuda.empty_cache()
         dist_est = torch.cat(dist_est).flatten()
         quat_true = to_var(torch.tensor(viewpointDiffBatch(query_quats_rep, grid_quats_rep)))
-        loss = loss_function(dist_est, quat_true, reduce=False)
+        loss = loss_function(dist_est, quat_true, reduction='none')
+        
+        metrics = {}
+        if(disp_metrics):
+            rank_gt = []
+            rank_top = []
+            output_gt = []
+            dist_top = []
+            dist_est_chunks = torch.split(dist_est, grid_size)
+            quat_true_chunks = torch.split(quat_true, grid_size)
+            for d_est, q_true in zip(dist_est_chunks, quat_true_chunks):
+                d_est = to_np(d_est.detach())
+                true_angles = quaternionAngles(q_true)   
+                top_idx = np.argmin(dist_sign*d_est)
+                true_idx = np.argmin(true_angles)
+                rank_gt.append(np.nonzero(np.argsort(dist_sign*d_est) == true_idx)[0][0])
+                rank_top.append(np.nonzero(np.argsort(true_angles) == top_idx)[0][0])
+                output_gt.append(d_est[true_idx])
+                dist_top.append(true_angles[top_idx]*180/np.pi)
+            metrics['rank_gt'] = np.mean(rank_gt)
+            metrics['rank_top'] = np.mean(rank_top)
+            metrics['output_gt'] = np.mean(output_gt)
+            metrics['dist_top'] = np.mean(dist_top)
+            
         del grid_features, grid_feature_chunks
         del query_features, query_feature_chunks 
         del gf, qf, dist_est, quat_true, 
@@ -169,7 +199,7 @@ def hardExampleMining(model,
         uniform_indices = np.random.choice(loss_indices[cutoff_idx:], num_uniform, replace=False)
         pool_indices = np.concatenate([top_indices, uniform_indices])
     else:
-        p = np.exp(loss_temperature*loss)
+        p = np.exp(loss_temperature*to_np(loss))
         p /= p.sum()
         assert sum(p>0) > num_indices, 'Temperature parameter to high, insufficnent non-zero probabilities'
         pool_indices = np.random.choice(np.arange(loss.shape[0]), num_indices, replace = False, p=p)
@@ -177,5 +207,5 @@ def hardExampleMining(model,
     del loss
     grid_indices = np.remainder(pool_indices, grid_size)
     query_indices = (pool_indices / grid_size).astype(int)
-    return grid_indices, query_indices
+    return grid_indices, query_indices, metrics
 
