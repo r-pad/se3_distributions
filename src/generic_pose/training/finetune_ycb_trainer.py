@@ -22,7 +22,7 @@ from logger import Logger
 
 from generic_pose.bbTrans.discretized4dSphere import S3Grid
 from generic_pose.datasets.numpy_dataset import NumpyImageDataset
-from generic_pose.datasets.sixdc_dataset import SixDCDataset
+from generic_pose.datasets.ycb_dataset import YCBDataset, ycbRenderTransform
 from generic_pose.utils import to_np, to_var
 from generic_pose.training.finetune_distance_utils import evaluateRenderedDistance
 from generic_pose.utils.image_preprocessing import preprocessImages
@@ -39,7 +39,6 @@ class FinetuneYCBTrainer(object):
                  renders_folder = None,
                  img_size = (224,224),
                  falloff_angle = np.pi/4,
-                 rejection_thresh_angle = 25*np.pi/180,
                  max_orientation_angle = None,
                  max_orientation_iters = 200,
                  batch_size = 32,
@@ -77,14 +76,13 @@ class FinetuneYCBTrainer(object):
  
        
         self.grid = S3Grid(base_level)
-        self.renderer = BpyRenderer()
-        self.renderer.loadModel(self.sixdc_dataset.getModelFilename(),
-                                model_scale = self.sixdc_dataset.getModelScale(), 
+        self.renderer = BpyRenderer(transform_func = ycbRenderTransform)
+        self.renderer.loadModel(self.train_dataset.getModelFilename(),
                                 emit = 0.5)
         self.renderPoses = self.renderer.renderPose
         self.base_vertices = np.unique(self.grid.vertices, axis = 0)
         self.base_size = self.base_vertices.shape[0]
-        self.base_renders = preprocessImages(self.renderPoses(self.base_vertices),
+        self.base_renders = preprocessImages(self.renderPoses(self.base_vertices, camera_dist = 0.33),
                                              img_size = self.img_size,
                                              normalize_tensors = True).float()
 
@@ -246,7 +244,6 @@ def main():
     parser.add_argument('--uniform_prop', type=float, default=0.5)
     parser.add_argument('--loss_temperature', type=float, default=None)
     parser.add_argument('--falloff_angle', type=float, default=45.0)
-    parser.add_argument('--rejection_thresh_angle', type=float, default=25.0)
     parser.add_argument('--max_orientation_iters', type=int, default=200)
 
     parser.add_argument('--batch_size', type=int, default=32)
@@ -278,12 +275,11 @@ def main():
     else:
         background_filenames = None
         
-    trainer = FinetuneDistanceTrainer(benchmark_folder = args.benchmark_folder,
+    trainer = FinetuneYCBTrainer(benchmark_folder = args.benchmark_folder,
                                       target_object = args.target_object,
                                       renders_folder = args.renders_folder,
                                       img_size = (args.width,args.height),
                                       falloff_angle = args.falloff_angle*np.pi/180.0,
-                                      rejection_thresh_angle = args.rejection_thresh_angle*np.pi/180.0,
                                       base_level = args.base_level,
                                       max_orientation_iters = args.max_orientation_iters,
                                       batch_size = args.batch_size,

@@ -17,7 +17,7 @@ from generic_pose.losses.distance_loss import (rawDistanceLoss,
                                                negExpDistanceError)
 
 from generic_pose.losses.quaternion_loss import quaternionAngles
-from generic_pose.utils.pose_processing import viewpointDiffBatch
+from generic_pose.utils.pose_processing import quatDiffBatch
 
 def evaluateRenderedDistance(model, grid, renderer,
                              query_imgs, query_quats, 
@@ -157,7 +157,7 @@ def hardExampleMining(model,
             dist_est.append(model.compare_network(gf,qf).detach())
             torch.cuda.empty_cache()
         dist_est = torch.cat(dist_est).flatten()
-        quat_true = to_var(torch.tensor(viewpointDiffBatch(query_quats_rep, grid_quats_rep)))
+        quat_true = to_var(torch.tensor(quatDiffBatch(query_quats_rep, grid_quats_rep)))
         loss = loss_function(dist_est, quat_true, reduction='none')
         
         metrics = {}

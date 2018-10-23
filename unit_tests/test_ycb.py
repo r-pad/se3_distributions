@@ -15,7 +15,7 @@ import os
 import numpy as np
 import cv2
 
-from generic_pose.datasets.sixdc_dataset import SixDCDataset, sixdcRenderTransform
+from generic_pose.datasets.ycb_dataset import YCBDataset, ycbRenderTransform
 from generic_pose.utils import to_np, to_var
 from generic_pose.utils.image_preprocessing import preprocessImages, unprocessImages
 from generic_pose.utils.pose_processing import viewpoint2Pose, pose2Viewpoint
@@ -26,7 +26,7 @@ rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
 resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))    
 
 def savePose(renderer, quat, filename,
-             camera_dist= 2, 
+             camera_dist= 0.3, 
              img_size=(224,224)):
     render = preprocessImages(renderer.renderPose([quat], camera_dist = camera_dist),
                               img_size = img_size,
@@ -36,7 +36,7 @@ def savePose(renderer, quat, filename,
 def visualizeDataset(dataset, renderer, image_prefix,
                      indices = [0], 
                      model_scale = 1.0,
-                     camera_dist = 2,
+                     camera_dist = 0.3,
                      img_size = (224, 224)):
     renderer.deleteAll()       
     renderer.loadModel(dataset.getModelFilename(),
@@ -63,9 +63,9 @@ def main():
     from generic_pose.models.pose_networks import gen_pose_net, load_state_dict
     parser = ArgumentParser()
 
-    parser.add_argument('--benchmark_folder', type=str, default='/media/bokorn/ExtraDrive2/benchmark/linemod6DC')
+    parser.add_argument('--benchmark_folder', type=str, default='/media/bokorn/ExtraDrive2/benchmark/ycb/YCB_Video_Dataset')
     parser.add_argument('--image_prefix', type=str, default='/home/bokorn/Downloads/test/')
-    parser.add_argument('--target_object', type=int, default=1)
+    parser.add_argument('--target_object', type=int, default=15)
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--height', type=int, default=224)
@@ -73,16 +73,17 @@ def main():
 
     args = parser.parse_args()
     
-    dataset = SixDCDataset(data_dir=args.benchmark_folder, 
-                           img_size=(args.height, args.width))
+    dataset = YCBDataset(data_dir=args.benchmark_folder, 
+                         image_set='train',
+                         img_size=(args.height, args.width),
+                         obj=args.target_object)
     dataset.loop_truth = [1]
-    dataset.setSequence('{:02d}'.format(args.target_object))
     #loader = DataLoader(dataset,
     #                    num_workers=num_workers, 
     #                    batch_size=int(batch_size/2), 
     #                    shuffle=True)
-    renderer = BpyRenderer(transform_func = sixdcRenderTransform)
-    visualizeDataset(dataset, renderer, args.image_prefix, model_scale = dataset.getModelScale())
+    renderer = BpyRenderer(transform_func = ycbRenderTransform)
+    visualizeDataset(dataset, renderer, args.image_prefix)
     import IPython; IPython.embed()
 
 if __name__=='__main__':

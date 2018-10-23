@@ -11,6 +11,12 @@ import scipy.io as sio
 
 from generic_pose.datasets.image_dataset import PoseImageDataset
 import generic_pose.utils.transformations as tf_trans
+from generic_pose.utils.pose_processing import viewpoint2Pose
+
+def ycbRenderTransform(q):
+    trans_quat = q.copy()
+    trans_quat = tf_trans.quaternion_multiply(trans_quat, tf_trans.quaternion_about_axis(-np.pi/2, [1,0,0]))
+    return viewpoint2Pose(trans_quat)
 
 class YCBDataset(PoseImageDataset):
     def __init__(self, data_dir, image_set, 
@@ -112,7 +118,7 @@ class YCBDataset(PoseImageDataset):
     def getImage(self, index, boarder_ratio=0.25):
         image_prefix = os.path.join(self.data_dir, 'data', self.data_filenames[index])
         img = cv2.imread(image_prefix + '-color.png')
-        mask = (cv2.imread(image_prefix + '-label.png')[:,:,:1] == self.obj).astype('uint8')
+        mask = 255*(cv2.imread(image_prefix + '-label.png')[:,:,:1] == self.obj).astype('uint8')
         #bb = cv2.boundingRect(cv2.findContours((lbls[:,:,0]==21).astype('uint8'), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[1][0])
         #x0, y0 = bb[:2]
         #x1, y1 = np.add(bb[:2], bb[2:])

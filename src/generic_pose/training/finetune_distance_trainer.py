@@ -22,7 +22,7 @@ from logger import Logger
 
 from generic_pose.bbTrans.discretized4dSphere import S3Grid
 from generic_pose.datasets.numpy_dataset import NumpyImageDataset
-from generic_pose.datasets.sixdc_dataset import SixDCDataset
+from generic_pose.datasets.sixdc_dataset import SixDCDataset, sixdcRenderTransform
 from generic_pose.utils import to_np, to_var
 from generic_pose.training.finetune_distance_utils import evaluateRenderedDistance
 from generic_pose.utils.image_preprocessing import preprocessImages
@@ -76,14 +76,14 @@ class FinetuneDistanceTrainer(object):
                                                     )
        
         self.grid = S3Grid(base_level)
-        self.renderer = BpyRenderer()
+        self.renderer = BpyRenderer(transform_func = sixdcRenderTransform)
         self.renderer.loadModel(self.sixdc_dataset.getModelFilename(),
                                 model_scale = self.sixdc_dataset.getModelScale(), 
                                 emit = 0.5)
         self.renderPoses = self.renderer.renderPose
         self.base_vertices = np.unique(self.grid.vertices, axis = 0)
         self.base_size = self.base_vertices.shape[0]
-        self.base_renders = preprocessImages(self.renderPoses(self.base_vertices),
+        self.base_renders = preprocessImages(self.renderPoses(self.base_vertices, camera_dist = 1.75),
                                              img_size = self.img_size,
                                              normalize_tensors = True).float()
 
