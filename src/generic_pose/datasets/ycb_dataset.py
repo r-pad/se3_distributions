@@ -18,6 +18,12 @@ def ycbRenderTransform(q):
     trans_quat = tf_trans.quaternion_multiply(trans_quat, tf_trans.quaternion_about_axis(-np.pi/2, [1,0,0]))
     return viewpoint2Pose(trans_quat)
 
+class SingularArray(object):
+    def __init__(self, value):
+        self.value = value
+    def __getitem__(self, index):
+        return self.value
+
 class YCBDataset(PoseImageDataset):
     def __init__(self, data_dir, image_set, 
                  obj = None, 
@@ -35,6 +41,10 @@ class YCBDataset(PoseImageDataset):
             self.classes.extend([x.rstrip('\n') for x in f.readlines()])
 
         self.num_classes = len(self.classes)
+        self.model_filenames = {}
+        for j in range(1, self.num_classes):
+            self.model_filenames[j] = os.path.join(self.data_dir, 'models', self.classes[j], 'textured.obj')
+
         self.symmetry = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1])
 
         self.image_set = image_set
@@ -90,7 +100,9 @@ class YCBDataset(PoseImageDataset):
             with open(os.path.join(self.data_dir, 'data', fn  + '-box.txt')) as f:
                 bboxes = [x.rstrip('\n').split(' ') for x in f.readlines()]
                 for bb in bboxes:
-                    obj_image_sets[bb[0]].append(fn)
+                    (x0, y0, x1, y1) = np.array(bb[1:], dtype='float')
+                    if(x1-x0 > 0 and y1-y0 > 0):
+                        obj_image_sets[bb[0]].append(fn)
         
         for k,v in obj_image_sets.items():
             with open(os.path.join(self.data_dir, 'image_sets', k+'_'+self.image_set+'.txt'), 'w') as f:
@@ -103,6 +115,7 @@ class YCBDataset(PoseImageDataset):
         self.obj = obj
         self.obj_name = self.getObjectName()
         self.data_filenames = self.loadImageSet()
+        self.data_models = SingularArray(self.obj)
 
     def getModelFilename(self):
         return os.path.join(self.data_dir, 'models', self.classes[self.obj], 'textured.obj')
@@ -141,12 +154,15 @@ class YCBDataset(PoseImageDataset):
             y1 = min(img_h, y1 + boarder_ratio*h)
         if(x1 < img_w):
             x1 = min(img_w, x1 + boarder_ratio*w)
-        
+         
         x0 = int(x0)
         x1 = int(x1)
         y0 = int(y0)
         y1 = int(y1)
-
+        if(x1-x0 <= 0 or y1-y0 <= 0):
+            #import IPython; IPython.embed()
+            print('Index {} invalid for {}'.format(index, self.getObjectName()))
+            return None
         img = np.concatenate([img, mask], axis=2)
         crop_img = self.preprocessImages(img[y0:y1, x0:x1, :], normalize_tensor = True)
         return crop_img

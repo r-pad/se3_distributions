@@ -26,3 +26,7 @@ def viewpoint2Pose(q):
 def quatDiffBatch(view_quats, base_quats):
     return np.array(list(map(quatDiff, view_quats, base_quats)))
 
+def quatAngularDiffBatch(view_quats, base_quats):
+    return np.array(list(map(quatAngularDiff, view_quats, base_quats)))
+
+

@@ -70,7 +70,7 @@ def evaluateRenderedDistance(model, grid, renderer,
     torch.cuda.empty_cache()
     #import IPython; IPython.embed()
         
-    quat_true = to_var(torch.tensor(viewpointDiffBatch(to_np(query_quats[query_indices]), 
+    quat_true = to_var(torch.tensor(quatDiffBatch(to_np(query_quats[query_indices]), 
                                                        grid_quats[grid_indices]))).detach()
 
     grid_img_samples = to_var(grid_imgs[grid_indices])
@@ -130,81 +130,84 @@ def hardExampleMining(model,
     batch_size = query_quats.shape[0]
     pool_size = grid_size*batch_size
 
+    if(disp_metrics or loss_temperature is None or uniform_prop < 1.0):
+        with torch.no_grad():
+            grid_img_chunks = torch.split(grid_imgs, image_chunk_size)
+            grid_features = []
+            for imgs in grid_img_chunks:
+                grid_features.append(model.originFeatures(imgs).detach())
+                torch.cuda.empty_cache()
+            grid_features = torch.cat(grid_features)
 
-    with torch.no_grad():
-        grid_img_chunks = torch.split(grid_imgs, image_chunk_size)
-        grid_features = []
-        for imgs in grid_img_chunks:
-            grid_features.append(model.originFeatures(imgs).detach())
+            # Duplicating query data [1, 2, 3, ... 1, 2, 3, ...]
+            grid_features = grid_features.repeat(batch_size,1)
+            grid_quats_rep = np.tile(grid_quats, (batch_size,1))
+
+            query_features = model.queryFeatures(query_imgs).detach()
             torch.cuda.empty_cache()
-        grid_features = torch.cat(grid_features)
-
-        # Duplicating query data [1, 2, 3, ... 1, 2, 3, ...]
-        grid_features = grid_features.repeat(batch_size,1)
-        grid_quats_rep = np.tile(grid_quats, (batch_size,1))
-
-        query_features = model.queryFeatures(query_imgs).detach()
-        torch.cuda.empty_cache()
-        
-        # Duplicating query data [1, 1, 1, ... 2, 2, 2, ...]
-        query_features = query_features.repeat(1,grid_size).view(pool_size,-1)
-        query_quats_rep = np.repeat(query_quats, grid_size, axis = 0)
-
-        grid_feature_chunks = torch.split(grid_features, feature_chunk_size)
-        query_feature_chunks = torch.split(query_features, feature_chunk_size)
-        dist_est = []
-        for gf, qf in zip(grid_feature_chunks, query_feature_chunks):
-            dist_est.append(model.compare_network(gf,qf).detach())
-            torch.cuda.empty_cache()
-        dist_est = torch.cat(dist_est).flatten()
-        quat_true = to_var(torch.tensor(quatDiffBatch(query_quats_rep, grid_quats_rep)))
-        loss = loss_function(dist_est, quat_true, reduction='none')
-        
-        metrics = {}
-        if(disp_metrics):
-            rank_gt = []
-            rank_top = []
-            output_gt = []
-            dist_top = []
-            dist_est_chunks = torch.split(dist_est, grid_size)
-            quat_true_chunks = torch.split(quat_true, grid_size)
-            for d_est, q_true in zip(dist_est_chunks, quat_true_chunks):
-                d_est = to_np(d_est.detach())
-                true_angles = quaternionAngles(q_true)   
-                top_idx = np.argmin(dist_sign*d_est)
-                true_idx = np.argmin(true_angles)
-                rank_gt.append(np.nonzero(np.argsort(dist_sign*d_est) == true_idx)[0][0])
-                rank_top.append(np.nonzero(np.argsort(true_angles) == top_idx)[0][0])
-                output_gt.append(d_est[true_idx])
-                dist_top.append(true_angles[top_idx]*180/np.pi)
-            metrics['rank_gt'] = np.mean(rank_gt)
-            metrics['rank_top'] = np.mean(rank_top)
-            metrics['output_gt'] = np.mean(output_gt)
-            metrics['dist_top'] = np.mean(dist_top)
             
-        del grid_features, grid_feature_chunks
-        del query_features, query_feature_chunks 
-        del gf, qf, dist_est, quat_true, 
-        #torch.cuda.empty_cache()
-        
-        #quat_true = quat_true.cpu()
-        grid_imgs = grid_imgs.cpu()
-        query_imgs = query_imgs.cpu()
+            # Duplicating query data [1, 1, 1, ... 2, 2, 2, ...]
+            query_features = query_features.repeat(1,grid_size).view(pool_size,-1)
+            query_quats_rep = np.repeat(query_quats, grid_size, axis = 0)
 
-    if(loss_temperature is None): 
+            grid_feature_chunks = torch.split(grid_features, feature_chunk_size)
+            query_feature_chunks = torch.split(query_features, feature_chunk_size)
+            dist_est = []
+            for gf, qf in zip(grid_feature_chunks, query_feature_chunks):
+                dist_est.append(model.compare_network(gf,qf).detach())
+                torch.cuda.empty_cache()
+            dist_est = torch.cat(dist_est).flatten()
+            quat_true = to_var(torch.tensor(quatDiffBatch(query_quats_rep, grid_quats_rep)))
+            loss = loss_function(dist_est, quat_true, reduction='none')
+            
+            metrics = {}
+            if(disp_metrics):
+                rank_gt = []
+                rank_top = []
+                output_gt = []
+                dist_top = []
+                dist_est_chunks = torch.split(dist_est, grid_size)
+                quat_true_chunks = torch.split(quat_true, grid_size)
+                for d_est, q_true in zip(dist_est_chunks, quat_true_chunks):
+                    d_est = to_np(d_est.detach())
+                    true_angles = quaternionAngles(q_true)   
+                    top_idx = np.argmin(dist_sign*d_est)
+                    true_idx = np.argmin(true_angles)
+                    rank_gt.append(np.nonzero(np.argsort(dist_sign*d_est) == true_idx)[0][0])
+                    rank_top.append(np.nonzero(np.argsort(true_angles) == top_idx)[0][0])
+                    output_gt.append(d_est[true_idx])
+                    dist_top.append(true_angles[top_idx]*180/np.pi)
+                metrics['rank_gt'] = np.mean(rank_gt)
+                metrics['rank_top'] = np.mean(rank_top)
+                metrics['output_gt'] = np.mean(output_gt)
+                metrics['dist_top'] = np.mean(dist_top)
+                
+            del grid_features, grid_feature_chunks
+            del query_features, query_feature_chunks 
+            del gf, qf, dist_est, quat_true, 
+            #torch.cuda.empty_cache()
+            
+            #quat_true = quat_true.cpu()
+            grid_imgs = grid_imgs.cpu()
+            query_imgs = query_imgs.cpu()
+        
+    if(loss_temperature is not None): 
+        p = np.exp(loss_temperature*to_np(loss))
+        p /= p.sum()
+        assert sum(p>0) > num_indices, 'Temperature parameter to high, insufficnent non-zero probabilities'
+        pool_indices = np.random.choice(np.arange(loss.shape[0]), num_indices, replace = False, p=p)
+        del loss
+    elif(uniform_prop < 1.0):
         cutoff_idx = int(np.floor(num_indices*uniform_prop))
         num_uniform = int(np.ceil(num_indices*(1.0-uniform_prop)))
         loss_indices = to_np(torch.sort(loss, descending=True)[1])
         top_indices = loss_indices[:cutoff_idx]
         uniform_indices = np.random.choice(loss_indices[cutoff_idx:], num_uniform, replace=False)
         pool_indices = np.concatenate([top_indices, uniform_indices])
+        del loss
     else:
-        p = np.exp(loss_temperature*to_np(loss))
-        p /= p.sum()
-        assert sum(p>0) > num_indices, 'Temperature parameter to high, insufficnent non-zero probabilities'
-        pool_indices = np.random.choice(np.arange(loss.shape[0]), num_indices, replace = False, p=p)
-    
-    del loss
+        pool_indices = np.random.choice(batch_size*grid_size, num_indices, replace=False)
+        
     grid_indices = np.remainder(pool_indices, grid_size)
     query_indices = (pool_indices / grid_size).astype(int)
     return grid_indices, query_indices, metrics

@@ -315,6 +315,12 @@ class S3Grid(object):
           self.tetra[n_tetra + i*8 + 7, :] = [i23, i03, i20, i13]
       #print(np.sqrt((self.vertices[n_vertices::,:]**2).sum(axis=1)))
       self.vertices[n_vertices::, :] /= np.sqrt((self.vertices[n_vertices::,:]**2).sum(axis=1))[:, np.newaxis]
+  def Simplify(self):
+    self.vertices, inv_indices = np.unique(self.vertices, return_inverse=True, axis=0)
+    self.tetra *= -1 
+    for idx_old, idx_new, in enumerate(inv_indices):
+        self.tetra[self.tetra==-idx_old]=idx_new
+
   def GetTetras(self, level):
     return self.tetra[self.tetra_levels[level]: \
         self.tetra_levels[level+1]]
@@ -331,12 +337,33 @@ class S3Grid(object):
         self.vertices[tetra[3],:]
         ], level, [i]))
     return tetrahedra
-  def GetNeighborhood(self, id, level=0):
+  def GetTetrahedron(self, id, level = -1):
+    if(level < 0):
+      level = self.depth
     tetras = self.GetTetras(level)
-    tetra_ids = np.nonzero(np.sum(tetras==27, axis=1))
+    tetrahedron = Tetrahedron([
+        self.vertices[tetras[id, 0],:],
+        self.vertices[tetras[id, 1],:],
+        self.vertices[tetras[id, 2],:],
+        self.vertices[tetras[id, 3],:]
+        ], level, [id])
+    return tetrahedron
+    
+  def GetNeighborhood(self, id, level=-1):
+    if(level < 0):
+        level = self.depth
+    tetras = self.GetTetras(level)
+    tetra_ids = np.nonzero(np.sum(tetras==id, axis=1))
+    neighborhood = tetras[tetra_ids]
+    return neighborhood.copy(), tetra_ids[0]
+  def GetNeighboringTetra(self, id, level=-1):
+    if(level < 0):
+        level = self.depth
+    tetras = self.GetTetras(level)
+    tetra_ids = np.nonzero(np.sum(tetras==id, axis=1))
     neighborhood = tetras[tetra_ids]
     tetrahedra = []
-    for i,tetra in enumerate(neighborhood):
+    for i,tetra in zip(tetra_ids[0], neighborhood):
       tetrahedra.append(Tetrahedron([
         self.vertices[tetra[0],:],
         self.vertices[tetra[1],:],

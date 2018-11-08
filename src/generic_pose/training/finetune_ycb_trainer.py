@@ -53,7 +53,7 @@ class FinetuneYCBTrainer(object):
         self.falloff_angle = falloff_angle
         
         self.train_dataset = YCBDataset(data_dir=benchmark_folder, 
-                                        image_set='train',
+                                        image_set='train_split',
                                         img_size=img_size,
                                         obj=target_object)
         self.train_dataset.loop_truth = [1]
@@ -64,7 +64,7 @@ class FinetuneYCBTrainer(object):
                                        shuffle=True)
 
         self.valid_dataset = YCBDataset(data_dir=benchmark_folder, 
-                                        image_set='val',
+                                        image_set='valid_split',
                                         img_size=img_size,
                                         obj=target_object)
         self.valid_dataset.loop_truth = [1]
@@ -80,11 +80,24 @@ class FinetuneYCBTrainer(object):
         self.renderer.loadModel(self.train_dataset.getModelFilename(),
                                 emit = 0.5)
         self.renderPoses = self.renderer.renderPose
-        self.base_vertices = np.unique(self.grid.vertices, axis = 0)
+        base_render_folder = os.path.join(benchmark_folder,
+                                          'base_renders',
+                                          self.train_dataset.getObjectName(),
+                                          '{}'.format(base_level))
+        if(os.path.exists(os.path.join(base_render_folder, 'renders.pt'))):
+            self.base_renders = torch.load(os.path.join(base_render_folder, 'renders.pt'))
+            self.base_vertices = torch.load(os.path.join(base_render_folder, 'vertices.pt'))
+        else:
+            self.base_vertices = np.unique(self.grid.vertices, axis = 0)
+            self.base_renders = preprocessImages(self.renderPoses(self.base_vertices, camera_dist = 0.33),
+                                                 img_size = self.img_size,
+                                                 normalize_tensors = True).float()
+            import pathlib
+            pathlib.Path(base_render_folder).mkdir(parents=True, exist_ok=True)
+            torch.save(self.base_renders, os.path.join(base_render_folder, 'renders.pt'))
+            torch.save(self.base_vertices, os.path.join(base_render_folder, 'vertices.pt'))
+        
         self.base_size = self.base_vertices.shape[0]
-        self.base_renders = preprocessImages(self.renderPoses(self.base_vertices, camera_dist = 0.33),
-                                             img_size = self.img_size,
-                                             normalize_tensors = True).float()
 
     def train(self, model, results_dir,
               loss_type = 'exp',
@@ -117,12 +130,12 @@ class FinetuneYCBTrainer(object):
         train_log_dir = os.path.join(log_dir,'train')
         if not os.path.exists(train_log_dir):
             os.makedirs(train_log_dir)
-        
         train_logger = Logger(train_log_dir)        
         
         valid_log_dir = os.path.join(log_dir,'valid')
         if not os.path.exists(valid_log_dir):
             os.makedirs(valid_log_dir)  
+        valid_logger = Logger(valid_log_dir)        
                     
         weights_dir = os.path.join(results_dir,'weights')
         if not os.path.exists(weights_dir):
@@ -185,7 +198,7 @@ class FinetuneYCBTrainer(object):
                     #########################################
                     ############ VALIDATION SETS ############
                     #########################################
-                    query_imgs, _1, query_quats, _2, _3 in next(self.valid_loader)
+                    query_imgs, _1, query_quats, _2, _3 = next(iter(self.valid_loader))
                     del _1[0], _1,  _2[0], _2, _3[0], _3
                     torch.cuda.empty_cache()
                     valid_results = evaluateRenderedDistance(model, self.grid, self.renderer,
@@ -200,13 +213,13 @@ class FinetuneYCBTrainer(object):
                                                              loss_temperature = loss_temperature)
 
                     torch.cuda.empty_cache()
+                    valid_info = {}
                     for k,v in valid_results.items():
                         if('vec' not in k):
                             valid_info[k] = v
                         else:
                             valid_logger.histo_summary(k,v, cumulative_batch_idx+1)
 
-                   
                     for tag, value in valid_info.items():
                         valid_logger.scalar_summary(tag, value, cumulative_batch_idx+1)
                     

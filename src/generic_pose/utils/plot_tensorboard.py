@@ -26,9 +26,12 @@ def plotScalar(tag, data, image_prefix, smoothing=0.0, wall_time = None,
     print(ylabel)
     cell_text = []
     for d, lbl in zip(data, labels):
-        end = np.where(d[:,0] > max_step)[0]
-        if end.size > 0:
-            end = end[0]
+        if(max_step is not None):
+            end = np.where(d[:,0] > max_step)[0]
+            if end.size > 0:
+                end = end[0]
+            else:
+                end = None
         else:
             end = None
         p = ax.plot(d[:end,0], ewma(d[:end,1], 1-smoothing), label=lbl, linewidth=0.5)
