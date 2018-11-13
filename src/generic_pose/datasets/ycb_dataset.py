@@ -26,7 +26,7 @@ class SingularArray(object):
 
 class YCBDataset(PoseImageDataset):
     def __init__(self, data_dir, image_set, 
-                 obj = None, 
+                 obj = None, use_syn_data = False, 
                  *args, **kwargs):
 
         super(YCBDataset, self).__init__(*args, **kwargs)
@@ -46,7 +46,7 @@ class YCBDataset(PoseImageDataset):
             self.model_filenames[j] = os.path.join(self.data_dir, 'models', self.classes[j], 'textured.obj')
 
         self.symmetry = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1])
-
+        self.use_syn_data = use_syn_data
         self.image_set = image_set
         #self.data_filenames = self.loadImageSet()
         if(obj is not None):
@@ -82,6 +82,14 @@ class YCBDataset(PoseImageDataset):
 
         with open(image_set_file) as f:
             image_index = [x.rstrip('\n') for x in f.readlines()]
+        if(self.use_syn_data):
+            syn_set_file = os.path.join(self.data_dir, 'image_sets',
+                                        self.obj_name+'_syn.txt')
+            assert os.path.exists(syn_set_file), \
+                'Path does not exist: {}'.format(syn_set_file)
+            with open(syn_set_file) as f:
+                image_index.extend([x.rstrip('\n') for x in f.readlines()])
+
         return image_index
 
     def generateObjectImageSet(self):
@@ -106,6 +114,31 @@ class YCBDataset(PoseImageDataset):
         
         for k,v in obj_image_sets.items():
             with open(os.path.join(self.data_dir, 'image_sets', k+'_'+self.image_set+'.txt'), 'w') as f:
+                f.write('\n'.join(v))
+
+    def generateSyntheticImageSet(self):
+        import glob
+        syn_data_dir = os.path.join(self.data_dir, 'data_syn')
+        #label_filenames = sorted(glob.glob(os.path.join(syn_data_dir,'-label.png')))
+        data_filenames =  sorted(glob.glob(os.path.join(syn_data_dir,'-meta.mat')))
+	
+        obj_image_sets = {}
+        for cls in self.classes[1:]:
+            obj_image_sets[cls] = []
+ 
+        for fn in data_filenames:
+            data_prefix = '-'.join(fn.split('/')[-1].split('-')[:-1])
+            data = sio.loadmat(os.path.join(self.data_dir, 'data_syn', data_prefix + '-meta.mat'))
+            cls_idxs = data['cls_indexes'].astype(int)
+            
+            with cv2.imread(os.path.join(self.data_dir, 'data_syn', data_prefix  + '-label.png')) as img:
+                data_prefix = os.path.join('..', 'data_syn', data_prefix)
+                for idx in cls_idxs: 
+                    if(np.sum(img == idx) > 0):
+                        obj_image_sets[self.classes[idx]].append(data_prefix)
+        
+        for k,v in obj_image_sets.items():
+            with open(os.path.join(self.data_dir, 'image_sets', k+'_syn.txt'), 'w') as f:
                 f.write('\n'.join(v))
 
     def getObjectName(self):
