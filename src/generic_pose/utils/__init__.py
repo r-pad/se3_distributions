@@ -16,3 +16,9 @@ def to_var(x, requires_grad = True):
         x = x.cuda()
     return Variable(x, requires_grad=requires_grad)
 
+class SingularArray(object):
+    def __init__(self, value):
+        self.value = value
+    def __getitem__(self, index):
+        return self.value
+

@@ -21,11 +21,14 @@ import numpy as np
 from logger import Logger
 
 from generic_pose.bbTrans.discretized4dSphere import S3Grid
-from generic_pose.datasets.numpy_dataset import NumpyImageDataset
+from generic_pose.datasets.tensor_dataset import TensorDataset
+from generic_pose.datasets.concat_dataset import ConcatDataset
 from generic_pose.datasets.ycb_dataset import YCBDataset, ycbRenderTransform
 from generic_pose.utils import to_np, to_var
 from generic_pose.training.finetune_distance_utils import evaluateRenderedDistance
 from generic_pose.utils.image_preprocessing import preprocessImages
+
+from quat_math import random_quaternion
 
 import resource
 rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
@@ -34,11 +37,11 @@ resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))
 class FinetuneYCBTrainer(object):
     def __init__(self, 
                  benchmark_folder,
+                 renders_folder,
                  target_object,
+                 render_offset = None,
                  use_exact_render = False,
-                 use_augmentation = False,
                  base_level = 2,
-                 renders_folder = None,
                  img_size = (224,224),
                  falloff_angle = np.pi/4,
                  max_orientation_angle = None,
@@ -55,45 +58,30 @@ class FinetuneYCBTrainer(object):
         self.falloff_angle = falloff_angle
         self.use_exact_render = use_exact_render
 
-        brightness_jitter = 1
-        contrast_jitter = 1
-        saturation_jitter = 1
-        hue_jitter = 0.5
-        max_translation = (0.5, 0.5)
-        max_scale = (0.5, 1)
-        rotate_image = False
-        max_num_occlusions = 4
-        max_occlusion_area = 0.25
-
-        if(use_augmentation):
-            augmentation_prob = 0.5
-        else:
-            augmentation_prob = 0.0
-
-        self.train_dataset = YCBDataset(data_dir=benchmark_folder, 
+        self.ycb_dataset = YCBDataset(data_dir=benchmark_folder, 
                                         image_set='train_split',
                                         img_size=img_size,
                                         obj=target_object,
-                                        use_syn_data=True,
-                                        brightness_jitter = brightness_jitter,
-                                        contrast_jitter = contrast_jitter,
-                                        saturation_jitter = saturation_jitter,
-                                        hue_jitter = hue_jitter,
-                                        max_translation = max_translation,
-                                        max_scale = max_scale,
-                                        rotate_image = rotate_image,
-                                        max_num_occlusions = max_num_occlusions,
-                                        max_occlusion_area = max_occlusion_area,
-                                        augmentation_prob = augmentation_prob)
+                                        use_syn_data=True)
+        self.ycb_dataset.loop_truth = None
+        self.ycb_dataset.append_rendered = use_exact_render
 
-        self.train_dataset.loop_truth = None
-        self.train_dataset.append_rendered = use_exact_render
-        
+        self.rendered_dataset = TensorDataset(renders_folder,
+                                              self.ycb_dataset.getModelFilename(),
+                                              img_size=img_size,
+                                              offset_quat = render_offset,
+                                              base_level = base_level)
+
+        self.rendered_dataset.loop_truth = None
+        self.rendered_dataset.append_rendered = use_exact_render
+        print("Renders Loaded")
+        self.train_dataset = ConcatDataset(self.ycb_dataset, self.rendered_dataset)
         self.train_loader = DataLoader(self.train_dataset,
-                                       num_workers=num_workers, 
-                                       batch_size=int(batch_size/2), 
-                                       shuffle=True)
+                                     num_workers=num_workers, 
+                                     batch_size=int(batch_size/2), 
+                                     shuffle=True)
 
+        
         self.valid_dataset = YCBDataset(data_dir=benchmark_folder, 
                                         image_set='valid_split',
                                         img_size=img_size,
@@ -106,15 +94,15 @@ class FinetuneYCBTrainer(object):
                                        batch_size=int(batch_size/2), 
                                        shuffle=True)
  
-       
+         
         self.grid = S3Grid(base_level)
         self.renderer = BpyRenderer(transform_func = ycbRenderTransform)
-        self.renderer.loadModel(self.train_dataset.getModelFilename(),
+        self.renderer.loadModel(self.ycb_dataset.getModelFilename(),
                                 emit = 0.5)
         self.renderPoses = self.renderer.renderPose
         base_render_folder = os.path.join(benchmark_folder,
                                           'base_renders',
-                                          self.train_dataset.getObjectName(),
+                                          self.ycb_dataset.getObjectName(),
                                           '{}'.format(base_level))
         if(os.path.exists(os.path.join(base_render_folder, 'renders.pt'))):
             self.base_renders = torch.load(os.path.join(base_render_folder, 'renders.pt'))
@@ -129,24 +117,19 @@ class FinetuneYCBTrainer(object):
             torch.save(self.base_renders, os.path.join(base_render_folder, 'renders.pt'))
             torch.save(self.base_vertices, os.path.join(base_render_folder, 'vertices.pt'))
         
+        print("Grid Loaded")
         self.base_size = self.base_vertices.shape[0]
 
-    def train(self, model, 
-              log_dir,
-              checkpoint_dir,
+    def train(self, model, results_dir,
               loss_type = 'exp',
               num_indices = 256,
-              per_instance = False,
-              top_n = 0,
-              sample_by_loss = False,
-              uniform_prop = 1.0,
+              uniform_prop = 0.5,
               loss_temperature = None,
               num_epochs = 100000,
               log_every_nth = 100,
               checkpoint_every_nth = 10000,
               lr = 1e-5,
-              optimizer = 'SGD',
-              sampling_distribution = None):
+              optimizer = 'SGD'):
         
         model.train()
         model.cuda()
@@ -160,12 +143,10 @@ class FinetuneYCBTrainer(object):
         else:
             raise AssertionError('Unsupported Optimizer {}, only SGD, Adam, and Adadelta supported'.format(optimizer))
             
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-        if not os.path.exists(checkpoint_dir):
-            os.makedirs(checkpoint_dir)
-                
-        log_dir = os.path.join(log_dir,'logs')
+        if not os.path.exists(results_dir):
+            os.makedirs(results_dir)
+        
+        log_dir = os.path.join(results_dir,'logs')
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
         train_log_dir = os.path.join(log_dir,'train')
@@ -178,7 +159,7 @@ class FinetuneYCBTrainer(object):
             os.makedirs(valid_log_dir)  
         valid_logger = Logger(valid_log_dir)        
                     
-        weights_dir = os.path.join(checkpoint_dir,'weights')
+        weights_dir = os.path.join(results_dir,'weights')
         if not os.path.exists(weights_dir):
             os.makedirs(weights_dir)
             
@@ -206,12 +187,8 @@ class FinetuneYCBTrainer(object):
                                                          optimizer = self.optimizer, 
                                                          disp_metrics = log_data,
                                                          num_indices = num_indices,
-                                                         per_instance = per_instance,
-                                                         sample_by_loss = sample_by_loss,
-                                                         top_n = top_n,
                                                          uniform_prop = uniform_prop,
-                                                         loss_temperature = loss_temperature,
-                                                         sampling_distribution = sampling_distribution)
+                                                         loss_temperature = loss_temperature)
 
                 torch.cuda.empty_cache()
                 #import IPython; IPython.embed()
@@ -244,7 +221,7 @@ class FinetuneYCBTrainer(object):
                     ############ VALIDATION SETS ############
                     #########################################
                     query_imgs, query_quats, _1, _2 = next(iter(self.valid_loader))
-                    del _1,  _2
+                    del _1, _2
                     torch.cuda.empty_cache()
                     valid_results = evaluateRenderedDistance(model, self.grid, self.renderer,
                                                              query_imgs, query_quats,
@@ -281,11 +258,11 @@ class FinetuneYCBTrainer(object):
                     checkpoint_weights_filename = os.path.join(weights_dir, 'checkpoint_{}.pth'.format(cumulative_batch_idx+1))
                     print("checkpointing model ", checkpoint_weights_filename)
                     torch.save(model.state_dict(), checkpoint_weights_filename)
-                    
+
                     if(last_checkpoint_filename is not None):
                         os.remove(last_checkpoint_filename)
                     last_checkpoint_filename = checkpoint_weights_filename
-
+                        
                 cumulative_batch_idx += 1
 
 def main():
@@ -298,19 +275,15 @@ def main():
     parser.add_argument('--benchmark_folder', type=str, default=None)
     parser.add_argument('--target_object', type=int, default=1)
     parser.add_argument('--renders_folder', type=str, default=None)
+    parser.add_argument('--random_render_offset', dest='random_render_offset', action='store_true')
     parser.add_argument('--base_level', type=int, default=2)
     parser.add_argument('--use_exact_render', dest='use_exact_render', action='store_true')    
-    parser.add_argument('--per_instance_sampling', dest='per_instance', action='store_true')    
-    parser.add_argument('--sample_by_loss', dest='sample_by_loss', action='store_true')    
-    parser.add_argument('--sampling_distribution', type=str, default='None')    
-    parser.add_argument('--use_data_augmentation', dest='use_augmentation', action='store_true')    
     
     parser.add_argument('--weight_file', type=str, default=None)
     parser.add_argument('--background_data_file', type=str, default=None)
 
     parser.add_argument('--num_indices', type=int, default=256)
-    parser.add_argument('--uniform_prop', type=float, default=1.0)
-    parser.add_argument('--top_n', type=int, default=0)
+    parser.add_argument('--uniform_prop', type=float, default=0.5)
     parser.add_argument('--loss_temperature', type=float, default=None)
     parser.add_argument('--falloff_angle', type=float, default=45.0)
     parser.add_argument('--max_orientation_iters', type=int, default=200)
@@ -331,11 +304,10 @@ def main():
     
     parser.add_argument('--random_seed', type=int, default=0)
 
-    parser.add_argument('--log_dir', type=str, default='results/') 
-    parser.add_argument('--checkpoint_dir', type=str, default=None) 
+    parser.add_argument('--results_dir', type=str, default='results/') 
     parser.add_argument('--num_epochs', type=int, default=100)
     parser.add_argument('--log_every_nth', type=int, default=100)
-    parser.add_argument('--checkpoint_every_nth', type=int, default=1000)
+    parser.add_argument('--checkpoint_every_nth', type=int, default=500)
 
     args = parser.parse_args()
 
@@ -344,12 +316,17 @@ def main():
             background_filenames = f.read().split()
     else:
         background_filenames = None
-        
+    
+    if(args.random_render_offset):
+        render_offset = random_quaternion()
+    else:
+        render_offset = None
+
     trainer = FinetuneYCBTrainer(benchmark_folder = args.benchmark_folder,
                                       target_object = args.target_object,
                                       renders_folder = args.renders_folder,
+                                      render_offset = render_offset,
                                       use_exact_render = args.use_exact_render,
-                                      use_augmentation = args.use_augmentation,
                                       img_size = (args.width,args.height),
                                       falloff_angle = args.falloff_angle*np.pi/180.0,
                                       base_level = args.base_level,
@@ -361,11 +338,8 @@ def main():
                                       )
 
 
-    if(args.checkpoint_dir is None):
-        args.checkpoint_dir = args.log_dir
     current_timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    log_dir = os.path.join(args.log_dir,current_timestamp)    
-    checkpoint_dir = os.path.join(args.checkpoint_dir,current_timestamp)    
+    results_dir = os.path.join(args.results_dir,current_timestamp)    
     
     if args.weight_file is not None:
         args.pretrained = False
@@ -379,22 +353,16 @@ def main():
     if args.weight_file is not None:
         load_state_dict(model, args.weight_file)
 
-    sampling_distribution = eval(args.sampling_distribution)
-    print('Sampling Distribution: ', sampling_distribution)
-    trainer.train(model, log_dir, checkpoint_dir,
+    trainer.train(model, results_dir,
                   loss_type = args.loss_type,
                   num_indices = args.num_indices,
-                  per_instance = args.per_instance,
-                  sample_by_loss = args.sample_by_loss,
                   uniform_prop = args.uniform_prop,
-                  top_n = args.top_n,
                   loss_temperature = args.loss_temperature,
                   num_epochs = args.num_epochs,
                   log_every_nth = args.log_every_nth,
                   lr = args.lr,
                   optimizer = args.optimizer,
-                  checkpoint_every_nth = args.checkpoint_every_nth,
-                  sampling_distribution = sampling_distribution)
+                  checkpoint_every_nth = args.checkpoint_every_nth)
 
 if __name__=='__main__':
     main()

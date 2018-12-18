@@ -18,6 +18,15 @@ normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
 to_tensor = transforms.ToTensor()
 
+def cropAndPad(img, padding_size = 0.1):
+    where = np.array(np.where(img[:,:,3]))
+    x1, y1 = np.amin(where, axis=1)
+    x2, y2 = np.amax(where, axis=1)
+
+    sub_img = img[x1:(x2+1), y1:(y2+1)]
+    pad_size = int(max(sub_img.shape[:2])*padding_size)
+    pad_img = cv2.copyMakeBorder(sub_img, pad_size, pad_size, pad_size, pad_size, cv2.BORDER_CONSTANT,value=0)
+    return pad_img
 
 def unprocessImages(imgs,
                     norm_mean = np.array([0.485, 0.456, 0.406]),
