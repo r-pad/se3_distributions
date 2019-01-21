@@ -10,6 +10,7 @@ import numpy as np
 import torch
 
 from generic_pose.datasets.image_dataset import PoseImageDataset
+from generic_pose.utils import SingularArray
 import generic_pose.utils.transformations as tf_trans
 from generic_pose.utils.pose_processing import viewpoint2Pose
 from pysixd.inout import load_ply, load_gt, load_cam_params, load_depth, load_im, save_im, load_yaml
@@ -17,12 +18,6 @@ from pysixd.inout import load_ply, load_gt, load_cam_params, load_depth, load_im
 def sixdcRenderTransform(q):
     trans_quat = q.copy()
     return viewpoint2Pose(trans_quat)
-
-class SingularArray(object):
-    def __init__(self, value):
-        self.value = value
-    def __getitem__(self, index):
-        return self.value
 
 class SixDCDataset(PoseImageDataset):
     def __init__(self, data_dir, use_mask = True,

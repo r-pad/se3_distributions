@@ -38,17 +38,17 @@ def visualizeDataset(dataset, renderer, image_prefix,
                      model_scale = 1.0,
                      camera_dist = 0.3,
                      img_size = (224, 224)):
-    renderer.deleteAll()       
-    renderer.loadModel(dataset.getModelFilename(),
-                       model_scale = model_scale, 
-                       emit = 0.5)
+    #renderer.deleteAll()       
+    #renderer.loadModel(dataset.getModelFilename(),
+    #                   model_scale = model_scale, 
+    #                   emit = 0.5)
     for index in indices:
         quat = dataset.getQuat(index)
         image  = dataset.getImage(index)
         #pose_quat = pose2Viewpoint(quat)
         #render_quat = quaternion_multiply(pose_quat, quaternion_about_axis(np.pi/2, [1,0,0]))
-        savePose(renderer, quat, image_prefix + '{}_render.png'.format(index),
-                 camera_dist = camera_dist, img_size = img_size)
+        #savePose(renderer, quat, image_prefix + '{}_render.png'.format(index),
+        #         camera_dist = camera_dist, img_size = img_size)
 
         #render = preprocessImages(renderer.renderPose([render_quat], camera_dist = camera_dist),
         #                          img_size = img_size,
@@ -63,8 +63,8 @@ def main():
     from generic_pose.models.pose_networks import gen_pose_net, load_state_dict
     parser = ArgumentParser()
 
-    parser.add_argument('--benchmark_folder', type=str, default='/media/bokorn/ExtraDrive2/benchmark/ycb/YCB_Video_Dataset')
-    parser.add_argument('--image_prefix', type=str, default='/home/bokorn/Downloads/test/')
+    parser.add_argument('--benchmark_folder', type=str, default='/scratch/bokorn/data/benchmarks/ycb/YCB_Video_Dataset')
+    parser.add_argument('--image_prefix', type=str, default='/home/bokorn/results/test/')
     parser.add_argument('--target_object', type=int, default=15)
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--num_workers', type=int, default=4)
@@ -74,9 +74,10 @@ def main():
     args = parser.parse_args()
     
     dataset = YCBDataset(data_dir=args.benchmark_folder, 
-                         image_set='train',
+                         image_set='train_split',
                          img_size=(args.height, args.width),
-                         obj=args.target_object)
+                         obj=args.target_object,
+                         use_syn_data = True)
     dataset.loop_truth = [1]
     #loader = DataLoader(dataset,
     #                    num_workers=num_workers, 

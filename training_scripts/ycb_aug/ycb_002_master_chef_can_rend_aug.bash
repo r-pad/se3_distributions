@@ -1,0 +1,22 @@
+python ../../src/generic_pose/training/finetune_ycb_only_renders_trainer.py \
+    --log_dir '/home/bokorn/results/ycb_finetune/01_002_master_chef_can/only_renders_aug' \
+    --checkpoint_dir '/scratch/bokorn/results/ycb_finetune/002_master_chef_can/only_renders_aug' \
+    --benchmark_folder '/scratch/bokorn/data/benchmarks/ycb/YCB_Video_Dataset' \
+    --renders_folder '/scratch/bokorn/data/benchmarks/ycb/YCB_Video_Dataset/base_renders/002_master_chef_can/random_renders/' \
+    --target_object 1 \
+    --weight_file '/home/bokorn/pretrained/distance/shapenet_exp_fo20_th25.pth' \
+    --augmentation_probability 0.5 \
+    --brightness_jitter 1.0 \
+    --contrast_jitter 1.0 \
+    --saturation_jitter 1.0 \
+    --hue_jitter 0.5 \
+    --max_translation 0.25 \
+    --min_scale 0.5 \
+    --max_scale 1.0 \
+    --max_num_occlusions 2 \
+    --min_occlusion_area 0.1 \
+    --max_occlusion_area 0.3 \
+    --top_n 1 \
+    --batch_size 8 \
+    --falloff_angle 20.0 --loss_type 'exp'
+

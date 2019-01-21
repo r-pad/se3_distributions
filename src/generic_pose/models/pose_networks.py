@@ -75,3 +75,21 @@ def load_state_dict(model, weight_file):
                 update_dict[k.replace('feature_network', 'query_network')] = v
         weights_dict.update(update_dict)
     model.load_state_dict(weights_dict)
+
+def add_mask_input(model):
+    model.origin_network[0] = create_mask_input(model.origin_network[0])
+    if(model.origin_network != model.query_network):
+        model.query_network[0] = create_mask_input(model.query_network[0])
+
+def create_mask_input(conv_in):
+    conv_mask = nn.Conv2d(4, conv_in.out_channels, 
+                          kernel_size=conv_in.kernel_size,
+                          stride = conv_in.stride,
+                          padding = conv_in.padding)
+    state_dict = conv_in.state_dict()
+    state_dict['weight'] = torch.cat([state_dict['weight'], 
+        torch.randn((conv_in.out_channels,1,) + conv_in.kernel_size)], dim=1)
+    conv_mask.load_state_dict(state_dict)
+    return conv_mask
+
+

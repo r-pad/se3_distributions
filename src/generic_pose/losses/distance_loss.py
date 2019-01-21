@@ -13,12 +13,19 @@ from generic_pose.losses.quaternion_loss import tensor2Angle
 from generic_pose.utils import to_np
 
 def rawDistanceLoss(pred, labels, falloff_angle=np.pi/4, reduction='elementwise_mean'):
-    target = tensor2Angle(labels).float()/np.pi 
-    loss = F.mse_loss(pred, target, reduction=reduction)
+    if(len(labels.shape) == 2):
+        theta = tensor2Angle(labels).float()/np.pi 
+    else:
+        theta = labels.float()
+    loss = F.mse_loss(pred, theta, reduction=reduction)
     return loss
 
 def rawDistanceError(pred, labels, falloff_angle, mean = False):
-    theta_true = to_np(tensor2Angle(labels))
+    if(len(labels.shape) == 2):
+        theta = tensor2Angle(labels)
+    else:
+        theta = labels
+    theta_true = to_np(theta)
     theta_pred = to_np(pred) * np.pi
     diff = np.abs(theta_true - theta_pred)
     if(mean):
@@ -27,8 +34,12 @@ def rawDistanceError(pred, labels, falloff_angle, mean = False):
         return diff
 
 def logFalloffTheta(labels, falloff_angle):
-    theta = tensor2Angle(labels)/falloff_angle
-    log_theta = torch.log(theta)
+    if(len(labels.shape) == 2):
+        theta = tensor2Angle(labels) 
+    else:
+        theta = labels
+    
+    log_theta = torch.log(theta/falloff_angle)
     target = theta.clamp(max=1)+(log_theta).clamp(min=0)
     max_target = 1 + np.log(np.pi/falloff_angle)
     return target / max_target
@@ -40,7 +51,12 @@ def logDistanceLoss(pred, labels, falloff_angle=np.pi/4, reduction='elementwise_
     return loss
 
 def logDistanceError(pred, labels, falloff_angle, mean = False):
-    theta_true = to_np(tensor2Angle(labels))
+    if(len(labels.shape) == 2):
+        theta = tensor2Angle(labels)
+    else:
+        theta = labels
+     
+    theta_true = to_np(theta)
     max_target = 1 + np.log(np.pi/falloff_angle)
     denorm_pred = to_np(pred) * max_target
     theta_pred = np.clip((denorm_pred * falloff_angle) * (denorm_pred < 1) \
@@ -53,8 +69,15 @@ def logDistanceError(pred, labels, falloff_angle, mean = False):
         return diff
 
 def expDecayTheta(labels, falloff_angle):
-    theta = tensor2Angle(labels)/falloff_angle
-    return torch.exp(-theta)
+    if(len(labels.shape) == 2):
+        theta = tensor2Angle(labels) 
+    else:
+        theta = labels
+
+    return torch.exp(-theta/falloff_angle)
+
+def invExpDecayTheta(pred, falloff_angle):
+    return np.clip(-np.log(np.maximum(pred, 0))*falloff_angle, 0, np.pi)
 
 def expDistanceLoss(pred, labels, falloff_angle=np.pi/9, reduction='elementwise_mean'):
     target = expDecayTheta(labels.float(), falloff_angle)
@@ -62,8 +85,13 @@ def expDistanceLoss(pred, labels, falloff_angle=np.pi/9, reduction='elementwise_
     return loss
 
 def expDistanceError(pred, labels, falloff_angle, mean = False):
-    theta_true = to_np(tensor2Angle(labels))
-    theta_pred = np.clip(-np.log(np.maximum(to_np(pred), 0))*falloff_angle, 0, np.pi)
+    if(len(labels.shape) == 2):
+        theta = tensor2Angle(labels) 
+    else:
+        theta = labels
+
+    theta_true = to_np(theta)
+    theta_pred = invExpDecayTheta(to_np(pred), falloff_angle)
     diff = np.abs(theta_true - theta_pred)
     if(mean):
         return np.mean(diff)
@@ -71,8 +99,12 @@ def expDistanceError(pred, labels, falloff_angle, mean = False):
         return diff
 
 def negExpTheta(labels, falloff_angle):
-    theta = tensor2Angle(labels)/falloff_angle
-    return 1-torch.exp(-theta)
+    if(len(labels.shape) == 2):
+        theta = tensor2Angle(labels) 
+    else:
+        theta = labels
+
+    return 1-torch.exp(-theta/falloff_angle)
 
 def negExpDistanceLoss(pred, labels, falloff_angle=np.pi/9, reduction='elementwise_mean'):
     target = negExpTheta(labels.float(), falloff_angle)
@@ -80,7 +112,12 @@ def negExpDistanceLoss(pred, labels, falloff_angle=np.pi/9, reduction='elementwi
     return loss
 
 def negExpDistanceError(pred, labels, falloff_angle, mean = False):
-    theta_true = to_np(tensor2Angle(labels))
+    if(len(labels.shape) == 2):
+        theta = tensor2Angle(labels) 
+    else:
+        theta = labels
+
+    theta_true = to_np(theta)
     theta_pred = np.clip(-np.log(np.maximum(1-to_np(pred), 0))*falloff_angle, 0, np.pi)
     diff = np.abs(theta_true - theta_pred)
     if(mean):

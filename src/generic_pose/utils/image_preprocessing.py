@@ -18,6 +18,15 @@ normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
 to_tensor = transforms.ToTensor()
 
+def cropAndPad(img, padding_size = 0.1):
+    where = np.array(np.where(img[:,:,3]))
+    x1, y1 = np.amin(where, axis=1)
+    x2, y2 = np.amax(where, axis=1)
+
+    sub_img = img[x1:(x2+1), y1:(y2+1)]
+    pad_size = int(max(sub_img.shape[:2])*padding_size)
+    pad_img = cv2.copyMakeBorder(sub_img, pad_size, pad_size, pad_size, pad_size, cv2.BORDER_CONSTANT,value=0)
+    return pad_img
 
 def unprocessImages(imgs,
                     norm_mean = np.array([0.485, 0.456, 0.406]),
@@ -30,7 +39,8 @@ def preprocessImages(imgs, img_size,
                      normalize_tensors = False,
                      background = None,
                      background_filenames = None,
-                     crop_percent = None):
+                     crop_percent = None,
+                     remove_mask = True):
     p_imgs = []
     for image in imgs:
         if(background is None and background_filenames is not None):
@@ -41,7 +51,7 @@ def preprocessImages(imgs, img_size,
             image = np.expand_dims(image, axis=2)
         
         if(image.shape[2] == 4):
-            image = transparentOverlay(image, background)
+            image = transparentOverlay(image, background, remove_mask=remove_mask)
         
         if(crop_percent is not None):
             image = cropAndResize(image, img_size, crop_percent)
@@ -50,8 +60,11 @@ def preprocessImages(imgs, img_size,
         
         image = image.astype(np.uint8)
         if(normalize_tensors):
-            image = normalize(to_tensor(image))
-
+            if(remove_mask):
+                image = normalize(to_tensor(image[:,:,:3]))
+            else:
+                image = torch.cat([normalize(to_tensor(image[:,:,:3])), 
+                                   to_tensor(image[:,:,3:])])
         p_imgs.append(image)
         
     if(normalize_tensors):
@@ -132,7 +145,7 @@ def cropAndResize(img, size, crop_percent):
     
     return scaled_img
     
-def transparentOverlay(foreground, background=None, pos=(0,0),scale = 1):
+def transparentOverlay(foreground, background=None, remove_mask = True, pos=(0,0),scale = 1):
     """
     :param foreground: transparent Image (BGRA)
     :param background: Input Color Background Image
@@ -147,7 +160,9 @@ def transparentOverlay(foreground, background=None, pos=(0,0),scale = 1):
     alpha = foreground[:,:,3:].astype(float)/255    
     
     if(background is None):
-        background = alpha*foreground[:,:,:3] + 255.0*(1.0-alpha)
+        img = alpha*foreground[:,:,:3] + 255.0*(1.0-alpha)
+        if(not remove_mask):
+            img = np.concatenate([img, foreground[:,:,3:]], axis=2)
     else:
         h,w,_ = foreground.shape
         rows,cols,_ = background.shape
@@ -155,7 +170,11 @@ def transparentOverlay(foreground, background=None, pos=(0,0),scale = 1):
         y0,x0 = pos[0],pos[1]
         y1 = min(y0+h, rows)
         x1 = min(x0+w, cols)
-        background[y0:y1,x0:x1,:] = alpha*foreground[:,:,:3] + (1.0-alpha)*background[y0:y1,x0:x1,:]
-    
-    return background
+        img = background.copy()
+        img[y0:y1,x0:x1,:] = alpha*foreground[:,:,:3] + (1.0-alpha)*background[y0:y1,x0:x1,:]
+        if(not remove_mask):
+            img = np.concatenate([img, np.zeros((rows,cols,1))], axis=2)
+            img[y0:y1,x0:x1,3:] = foreground[:,:,3:]
+
+    return img
 

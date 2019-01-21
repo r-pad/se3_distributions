@@ -1,0 +1,2 @@
+/ssd0/bokorn/data/robot_data/plane/plane_4
+/ssd0/bokorn/data/robot_data/plane/plane_5

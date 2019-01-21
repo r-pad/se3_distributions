@@ -27,6 +27,23 @@ class CompareNet(nn.Module):
     def forward(self, v1, v2):
         return self.network(torch.cat((v1, v2), dim=1))
 
+class SingleNet(nn.Module):
+    def __init__(self, features_size, output_dim):
+        super(SingleNet, self).__init__()
+
+        self.network = nn.Sequential(
+                                     nn.Dropout(),
+                                     nn.Linear(features_size, 4096),
+                                     nn.ReLU(inplace=True),
+                                     nn.Dropout(),
+                                     nn.Linear(4096, 4096),
+                                     nn.ReLU(inplace=True),
+                                     nn.Linear(4096, int(np.prod(output_dim)))
+                                     )
+    def forward(self, v1):
+        return self.network(v1)
+
+
 class SigmoidCompareNet(nn.Module):
     def __init__(self, features_size, output_dim):
         super(SigmoidCompareNet, self).__init__()
@@ -36,6 +53,45 @@ class SigmoidCompareNet(nn.Module):
                                      nn.Linear(features_size * 2, 4096),
                                      nn.ReLU(inplace=True),
                                      nn.Dropout(),
+                                     nn.Linear(4096, 4096),
+                                     nn.ReLU(inplace=True),
+                                     nn.Linear(4096, int(np.prod(output_dim))),
+                                     nn.Sigmoid()
+                                     )
+    def forward(self, v1, v2):
+        return self.network(torch.cat((v1, v2), dim=1))
+
+class SigmoidWideCompareNet(nn.Module):
+    def __init__(self, features_size, output_dim):
+        super(SigmoidWideCompareNet, self).__init__()
+
+        self.network = nn.Sequential(
+                                     nn.Dropout(),
+                                     nn.Linear(features_size * 2, 8192),
+                                     nn.ReLU(inplace=True),
+                                     nn.Dropout(),
+                                     nn.Linear(8192, 8192),
+                                     nn.ReLU(inplace=True),
+                                     nn.Linear(8192, int(np.prod(output_dim))),
+                                     nn.Sigmoid()
+                                     )
+    def forward(self, v1, v2):
+        return self.network(torch.cat((v1, v2), dim=1))
+
+
+class SigmoidDeepCompareNet(nn.Module):
+    def __init__(self, features_size, output_dim):
+        super(SigmoidDeepCompareNet, self).__init__()
+
+        self.network = nn.Sequential(
+                                     nn.Dropout(),
+                                     nn.Linear(features_size * 2, 4096),
+                                     nn.ReLU(inplace=True),
+                                     nn.Dropout(),
+                                     nn.Linear(4096, 4096),
+                                     nn.ReLU(inplace=True),
+                                     nn.Linear(4096, 4096),
+                                     nn.ReLU(inplace=True),
                                      nn.Linear(4096, 4096),
                                      nn.ReLU(inplace=True),
                                      nn.Linear(4096, int(np.prod(output_dim))),
@@ -159,8 +215,11 @@ class SplitCompareNet(nn.Module):
 
 compare_networks = {
                     'basic':CompareNet,
+                    'single':SingleNet,
                     'linear':LinearPreCompareNet,
                     'sigmoid':SigmoidCompareNet,
+                    'sigmoid_wide':SigmoidWideCompareNet,
+                    'sigmoid_deep':SigmoidDeepCompareNet,
                     'tanh':TanhCompareNet,
                     'skip':SkipCompareNet,
                     'symetric':SymetricCompareNet,

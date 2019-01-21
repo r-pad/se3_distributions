@@ -6,6 +6,12 @@
 import torch
 import gc
 import inspect
+import subprocess
+
+def get_gpu_memory_map():   
+    result = subprocess.check_output(['nvidia-smi', '--query-gpu=memory.used',
+                                      '--format=csv,nounits,noheader'])
+    return float(result)
 
 def find_names(obj):
     frame = inspect.currentframe()

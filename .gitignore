@@ -104,6 +104,9 @@ ENV/
 # mypy
 .mypy_cache/
 
+# slurm
+*.out
+
 # Local Folders
 training_scripts/all_car
 training_scripts/car1
