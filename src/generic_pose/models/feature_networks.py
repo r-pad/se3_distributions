@@ -12,8 +12,9 @@ import torchvision.models.vgg as vgg
 #import torchvision.models.alexnet as alexnet
 import torchvision.models.resnet as resnet
 from functools import partial
-
 from collections import OrderedDict
+
+from generic_pose.models.posecnn_mask import PoseCNNMask
 
 model_urls = {
     'alexnet': 'https://download.pytorch.org/models/alexnet-owt-4df8aa71.pth',
@@ -117,7 +118,34 @@ def linear_features(convnet_generator, linear_layers = [2048, 2048], **kwargs):
                                        linear_layers = linear_layers)
     return feature_network, linear_layers[-1]
 
+def posecnn_features(pretrained = True, add_conv4_features = False):
+    feature_network = PoseCNNMask(checkpoint_filename ='/home/bokorn/pretrained/pose_cnn/vgg16_fcn_color_single_frame_2d_pose_add_lov_iter_160000.ckpt', 
+            add_conv4_features = add_conv4_features)
+    if(add_conv4_features):
+        feature_size = 512*28*28
+    else:
+        feature_size = 512*14*14
+
+    return feature_network, feature_size
+    
+def posecnn_imgnet_features(pretrained = True, add_conv4_features = False):
+    feature_network = PoseCNNMask(checkpoint_filename ='/home/bokorn/pretrained/distance/vgg_16.ckpt', 
+            imagenet_weights=True, add_conv4_features = add_conv4_features)
+    if(add_conv4_features):
+        feature_size = 512*28*28
+    else:
+        feature_size = 512*14*14
+
+    return feature_network, feature_size
+    
+
+
+
 feature_networks = {
+                    'posecnn_imgnet':partial(posecnn_imgnet_features, add_conv4_features=False),
+                    'posecnn_imgnet_add':partial(posecnn_imgnet_features, add_conv4_features=True),
+                    'posecnn':partial(posecnn_features, add_conv4_features=False),
+                    'posecnn_add':partial(posecnn_features, add_conv4_features=True),
                     'alexnet':alexnet_features,
                     'vgg16':vgg16_features,
                     'resnet152':partial(resnet_features, version=152),

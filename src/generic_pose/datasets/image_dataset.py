@@ -58,6 +58,8 @@ class PoseImageDataset(Dataset):
         self.augmentation_prob = augmentation_prob
         self.remove_mask = remove_mask
         self.resample_on_none = True
+        self.vgg_normalize = False
+        self.background = None
 
     def __getitem__(self, index):
         if(self.loop_truth is None):
@@ -183,8 +185,10 @@ class PoseImageDataset(Dataset):
 
         return preprocessImages([image], self.img_size,
                                 normalize_tensors = normalize_tensor,
+                                background = self.background,
                                 background_filenames = self.background_filenames, 
-                                remove_mask = self.remove_mask)[0], quat
+                                remove_mask = self.remove_mask, 
+                                vgg_normalize = self.vgg_normalize)[0], quat
 
     def getQuat(self, index):
         raise NotImplementedError('getQuat must be implemented by child classes')

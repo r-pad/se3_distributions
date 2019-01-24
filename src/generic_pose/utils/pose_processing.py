@@ -4,7 +4,7 @@ Created on Tue Nov 21 17:35:53 2017
 
 @author: bokorn
 """
-
+import torch
 import numpy as np
 from quat_math import (quatDiff,
                        quatAngularDiff,
@@ -13,6 +13,21 @@ from quat_math import (quatDiff,
 
 from functools import partial
 from itertools import product
+
+eps = 1e-7
+
+def tensorAngularAllDiffs(label_qs, verts):
+    return 2 * torch.acos(torch.abs(torch.transpose(torch.mm(verts, 
+        torch.transpose(label_qs,0,1)),0,1)).clamp(max=1-eps))
+
+def tensorAngularDiff(q1, q2):
+    return 2 * torch.acos(torch.abs((q1*q2).sum(1)).clamp(max=1-eps))
+
+def getGaussianKernal(verts, sigma=np.pi/36):
+    kernal = torch.exp(-tensorAngularAllDiffs(verts,verts)**2/sigma)
+    kernal = (kernal/kernal.sum(1)).transpose(0,1)
+    return kernal
+
 
 def pose2Viewpoint(q):
     delta_quat = np.array([-.5,-.5,-.5,.5])    
@@ -30,7 +45,7 @@ def quatDiffBatch(view_quats, base_quats):
     return np.array(list(map(quatDiff, view_quats, base_quats)))
 
 def quatAngularDiffBatch(q1, q2):
-    return 2*np.arccos(np.abs(np.sum(q1*q2, axis=1)))
+    return 2*np.arccos(np.minimum(np.abs(np.sum(q1*q2, axis=1)), 1-eps))
     #return np.array(list(map(quatAngularDiff, view_quats, base_quats)))
 
 
@@ -41,7 +56,7 @@ def quatAngularDiffProd(view_quats, base_quats):
 
 
 def quatAngularDiffDot(q1, q2):
-    return 2*np.arccos(np.abs(q1.dot(q2.T)))
+    return 2*np.arccos(np.minimum(np.abs(q1.dot(q2.T)), 1-eps))
 
 
 def quaternionMultiplyBatch(q2, q1):

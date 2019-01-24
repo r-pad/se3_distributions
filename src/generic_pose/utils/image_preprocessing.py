@@ -17,6 +17,9 @@ from generic_pose.utils import to_np
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
 to_tensor = transforms.ToTensor()
+vgg_mean = torch.tensor([102.9801, 115.9465, 122.7717])
+def vggToTensor(img, mean = vgg_mean):
+    return (torch.tensor(img).float() - mean).permute([2,0,1])
 
 def cropAndPad(img, padding_size = 0.1):
     where = np.array(np.where(img[:,:,3]))
@@ -40,7 +43,8 @@ def preprocessImages(imgs, img_size,
                      background = None,
                      background_filenames = None,
                      crop_percent = None,
-                     remove_mask = True):
+                     remove_mask = True,
+                     vgg_normalize = False):
     p_imgs = []
     for image in imgs:
         if(background is None and background_filenames is not None):
@@ -56,15 +60,26 @@ def preprocessImages(imgs, img_size,
         if(crop_percent is not None):
             image = cropAndResize(image, img_size, crop_percent)
         else:
-            image = resizeAndPad(image, img_size)
+            if(type(background) in [int, float]):
+                padColor = background
+            else:
+                padColor = 255.0
+            image = resizeAndPad(image, img_size, padColor=padColor)
         
         image = image.astype(np.uint8)
         if(normalize_tensors):
-            if(remove_mask):
-                image = normalize(to_tensor(image[:,:,:3]))
+            if(vgg_normalize):
+                if(remove_mask):
+                    image = vggToTensor(image[:,:,:3])
+                else:
+                    image = torch.cat([vggToTensor(image[:,:,:3]), 
+                                       vggToTensor(image[:,:,3:], mean=0)])
             else:
-                image = torch.cat([normalize(to_tensor(image[:,:,:3])), 
-                                   to_tensor(image[:,:,3:])])
+                if(remove_mask):
+                    image = normalize(to_tensor(image[:,:,:3]))
+                else:
+                    image = torch.cat([normalize(to_tensor(image[:,:,:3])), 
+                                       to_tensor(image[:,:,3:])])
         p_imgs.append(image)
         
     if(normalize_tensors):
@@ -158,9 +173,12 @@ def transparentOverlay(foreground, background=None, remove_mask = True, pos=(0,0
         foreground = cv2.resize(foreground, None,fx=scale,fy=scale)
 
     alpha = foreground[:,:,3:].astype(float)/255    
-    
+   
     if(background is None):
-        img = alpha*foreground[:,:,:3] + 255.0*(1.0-alpha)
+        background = 255.0
+
+    if(type(background) in [int, float]):
+        img = alpha*foreground[:,:,:3] + background*(1.0-alpha)
         if(not remove_mask):
             img = np.concatenate([img, foreground[:,:,3:]], axis=2)
     else:
