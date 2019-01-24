@@ -19,6 +19,7 @@ from generic_pose.losses.distance_loss import (rawDistanceLoss,
                                                negExpDistanceLoss,
                                                negExpDistanceError)
 
+from generic_pose.utils.pose_processing import tensorAngularDiff, tensorAngularAllDiffs, getGaussianKernal
 from generic_pose.utils.pose_processing import quatAngularDiffDot
 from generic_pose.eval.posecnn_eval import evaluateQuat, getYCBThresholds
 from quat_math import invAngularPDF, quaternion_from_matrix, quatAngularDiff
@@ -58,8 +59,16 @@ def evaluateDataset(model, data_loader,
                     loss_type = 'exp',
                     falloff_angle = 20*np.pi/180,
                     image_chunk_size = 500,
-                    num_indices = float('inf')):
+                    num_indices = float('inf'),
+                    sigma = None, 
+                    save_output = False,
+                    ):
     with torch.no_grad():
+        if(sigma is not None):
+            kernal = getGaussianKernal(grid_quats, sigma)
+        else:
+            kernal = None
+
         dataset = data_loader.dataset
         points = dataset.getObjectPoints()
         cls = dataset.getObjectName()
@@ -81,6 +90,10 @@ def evaluateDataset(model, data_loader,
         agg_metrics['error_add'] = [] 
         agg_metrics['error_add_pcnn'] = [] 
         agg_metrics['dist_pcnn'] = [] 
+        agg_metrics['idx'] = []
+        
+        if(save_output):
+            agg_metrics['outputs'] = [] 
         
         dataset = data_loader.dataset 
 
@@ -98,10 +111,13 @@ def evaluateDataset(model, data_loader,
             for q_img, d_true, q_true, idx in zip(query_imgs, dist_true, query_quats, indices):
                 if(torch.norm(q_true) > 0):
                     _, metrics = evaluateImage(model, loss_type, falloff_angle, grid_features, 
-                                                    q_img.unsqueeze(0), d_true.flatten())
+                                                    q_img.unsqueeze(0), d_true.flatten(), 
+                                                    kernal = kernal,
+                                                    save_output = save_output)
                     for k,v in agg_metrics.items():
-                        if(k not in ['error_add', 'error_add_pcnn', 'dist_pcnn']):
+                        if(k in metrics.keys()):
                             v.append(metrics[k])
+                       
                     q_pred = grid_quats[metrics['top_idx']]
                     mat_pcnn = dataset.getTrans(idx, use_gt=False)
                     mat_true = dataset.getTrans(idx, use_gt=True)
@@ -120,6 +136,7 @@ def evaluateDataset(model, data_loader,
                     agg_metrics['error_add'].append(err)
                     agg_metrics['error_add_pcnn'].append(err_pcnn)
                     agg_metrics['dist_pcnn'].append(dist_pcnn)
+                    agg_metrics['idx'].append(idx)
                 else:
                     for k,v in agg_metrics.items():
                         v.append(float('NAN'))
@@ -135,13 +152,19 @@ def evaluateImage(model, loss_type, falloff_angle,
                   grid_features, 
                   query_img, dist_true,
                   calc_metrics = True,
-                  calc_loss = False):
+                  calc_loss = False, 
+                  kernal = None,
+                  save_output = False,
+                  ):
     loss_function, error_function, dist_sign = getDistanceLoss(loss_type, falloff_angle)
     #t = time.time()
     query_features = model.queryFeatures(query_img).repeat(grid_features.shape[0],1)
     #print('Feature Time: ', time.time()-t)
     #t = time.time()
-    dist_est = model.compare_network(grid_features,query_features)[:,0]
+    dist_est = model.compare_network(grid_features,query_features)
+    if(kernal is not None):
+        dist_est = torch.mm(test, kernal_norm)
+    dist_est = dist_est.flatten()
     #print('Forward Time: ', time.time()-t)
     #t = time.time()
     if(calc_loss):
@@ -176,7 +199,8 @@ def evaluateImage(model, loss_type, falloff_angle,
         metrics['dist_top'] = dist_true[top_idx]*180/np.pi
         #print('dist Time: ', time.time()-t)
         #t = time.time()
-
+        if(save_output):
+            metrics['outputs'] = to_np(dist_est)
     #print('Metric Time: ', time.time()-t)
     #t = time.time()
 
