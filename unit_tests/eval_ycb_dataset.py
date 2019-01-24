@@ -28,7 +28,7 @@ rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
 resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))    
 
         
-def evaluate(obj, weights_dir, results_prefix, image_set, benchmark_dir):
+def evaluate(obj, weights_dir, results_prefix, image_set, benchmark_dir, save_output):
     dataset = YCBDataset(data_dir=benchmark_dir,
                          image_set=image_set,
                          img_size=(224,224),
@@ -64,7 +64,8 @@ def evaluate(obj, weights_dir, results_prefix, image_set, benchmark_dir):
     model.cuda()
     optimizer = None #Adam(model.parameters(), lr=1e-5)
   
-    metrics = evaluateDataset(model, loader, base_vertices, base_renders) 
+    metrics = evaluateDataset(model, loader, base_vertices, base_renders, 
+            save_output = save_output) 
     plotAccuracy(metrics, results_prefix)
     
     np.savez(results_prefix + 'metrics.npz', **metrics)
@@ -101,13 +102,13 @@ if __name__=='__main__':
     parser.add_argument('--image_set', type=str, default='valid_split')
     parser.add_argument('--benchmark_dir', type=str, 
         default='/scratch/bokorn/data/benchmarks/ycb/YCB_Video_Dataset/')
-   
+    parser.add_argument('--save_output', dest='save_output', action='store_true')
     args = parser.parse_args()
     
     if(args.weights_dir is None):
-        args.weights_dir = '/scratch/bokorn/results/ycb_finetune/model_{}/'.format(args.obj)
+        args.weights_dir = '/scratch/bokorn/results/ycb_finetune/full_train/model_{}/'.format(args.obj)
     if(args.results_prefix is None):
         args.results_prefix = '/home/bokorn/results/ycb_finetune/model_{}/{}_'.format(args.obj, args.image_set)
     
-    evaluate(args.obj, args.weights_dir, args.results_prefix, args.image_set, args.benchmark_dir)
+    evaluate(args.obj, args.weights_dir, args.results_prefix, args.image_set, args.benchmark_dir, args.save_output)
 

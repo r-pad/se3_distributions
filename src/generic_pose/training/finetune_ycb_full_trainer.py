@@ -86,7 +86,8 @@ class FinetuneYCBTrainer(object):
 
         self.ycb_dataset.loop_truth = None
         self.ycb_dataset.append_rendered = use_exact_render
-
+        print("YCB Data Loaded")
+        
         self.rendered_dataset = TensorDataset(renders_folder,
                                               self.ycb_dataset.getModelFilename(),
                                               img_size=img_size,
@@ -177,7 +178,9 @@ class FinetuneYCBTrainer(object):
               checkpoint_every_nth = 10000,
               lr = 1e-5,
               optimizer = 'SGD',
-              sampling_distribution = None):
+              sampling_distribution = None, 
+              start_idx = 0,
+              num_steps = 200000):
         
         model.train()
         model.cuda()
@@ -217,7 +220,7 @@ class FinetuneYCBTrainer(object):
         #from generic_pose.utils.torch_utils import getTensors
         #init_info, init_objs  = getTensors()
         #import IPython; IPython.embed()
-        cumulative_batch_idx = 0
+        cumulative_batch_idx = start_idx
         min_loss = float('inf')
         print('Starting Training')
         log_time = time.time()
@@ -318,9 +321,13 @@ class FinetuneYCBTrainer(object):
                     last_checkpoint_filename = checkpoint_weights_filename
 
                 cumulative_batch_idx += 1
+                if(cumulative_batch_idx > num_steps):
+                    print('Reached Max Iterations {}'.format(cumulative_batch_idx))
+                    return
 
 def main():
     import datetime
+    import glob
     from argparse import ArgumentParser
     from generic_pose.models.pose_networks import gen_pose_net, load_state_dict
     
@@ -377,6 +384,7 @@ def main():
     parser.add_argument('--log_dir', type=str, default='results/') 
     parser.add_argument('--checkpoint_dir', type=str, default=None) 
     parser.add_argument('--num_epochs', type=int, default=100)
+    parser.add_argument('--num_steps', type=int, default=200000)
     parser.add_argument('--log_every_nth', type=int, default=100)
     parser.add_argument('--checkpoint_every_nth', type=int, default=1000)
 
@@ -447,8 +455,20 @@ def main():
                          pretrained = args.pretrained,
                          siamese_features = args.siamese_features)
 
-    if args.weight_file is not None:
-        load_state_dict(model, args.weight_file)
+    files = glob.glob(args.checkpoint_dir + '/**/checkpoint_*.pth', recursive=True)
+    max_step = 0
+    weight_file = args.weight_file
+    for fn in files:
+        step = int(fn.split('_')[-1][:-4])
+        if(step >= max_step):
+            max_step = step
+            weight_file = fn
+
+    if(max_step > 0):
+        print('Starting at Step {} using checkpoint {}'.format(max_step, weight_file))
+
+    if weight_file is not None:
+        load_state_dict(model, weight_file)
 
     sampling_distribution = eval(args.sampling_distribution)
     print('Sampling Distribution: ', sampling_distribution)
@@ -464,7 +484,9 @@ def main():
                   lr = args.lr,
                   optimizer = args.optimizer,
                   checkpoint_every_nth = args.checkpoint_every_nth,
-                  sampling_distribution = sampling_distribution)
+                  sampling_distribution = sampling_distribution,
+                  start_idx = max_step,
+                  num_steps = args.num_steps)
 
 if __name__=='__main__':
     main()

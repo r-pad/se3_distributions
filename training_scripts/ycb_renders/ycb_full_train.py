@@ -1,7 +1,7 @@
 #!/bin/bash
 SRC_DIR=$HOME/src/generic_pose/generic_pose/src/generic_pose/
 echo ${1}
-python $SRC_DIR/training/finetune_ycb_w_renders_trainer.py \
+python $SRC_DIR/training/finetune_ycb_full_trainer.py \
     --log_dir '/home/bokorn/results/ycb_finetune/full_train/model_'${1} \
     --checkpoint_dir '/scratch/bokorn/results/ycb_finetune/full_train/model_'${1} \
     --benchmark_folder '/scratch/bokorn/data/benchmarks/ycb/YCB_Video_Dataset' \
