@@ -15,7 +15,7 @@ def main():
 
     #to_tensor = transforms.ToTensor()
 
-    #mask_net = PoseCNNMask('/home/bokorn/pretrained/pose_cnn/vgg16_fcn_color_single_frame_2d_pose_add_lov_iter_160000.ckpt')      
+    mask_net = PoseCNNMask('/home/bokorn/pretrained/pose_cnn/vgg16_fcn_color_single_frame_2d_pose_add_lov_iter_160000.ckpt')      
     #mask_net.eval()
     benchmark_folder='/scratch/bokorn/data/benchmarks/ycb/YCB_Video_Dataset/'
     dataset = YCBDataset(data_dir=benchmark_folder,
@@ -23,9 +23,11 @@ def main():
                          img_size=(224,224),
                          use_posecnn_masks = True,
                          obj=1)
-
+    dataset.vgg_normalize = True
+    dataset.background = 0.0
     dataset.loop_truth = None
-
+    import IPython; IPython.embed()
+    return 
     #prob = mask_net(to_tensor(img).unsqueeze(0))
     #mask = prob.data.permute(0,2,3,1).numpy()[0]
     for _ in range(100):
