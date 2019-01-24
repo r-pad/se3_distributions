@@ -22,11 +22,12 @@ def main():
     args = parser.parse_args()
     
     dataset = YCBDataset(data_dir=args.benchmark_folder, 
-                         image_set='train_split',
+                         image_set='valid_split',
                          img_size=(224, 224),
                          use_syn_data=True,
                          )
     for cls_idx in range(1, len(dataset.classes)):
+        print('Rendering {}'.format(cls_idx))
         dataset.setObject(cls_idx)            
         dataset.generateRenderedImages()
     import IPython; IPython.embed()
