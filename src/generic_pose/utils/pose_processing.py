@@ -9,7 +9,8 @@ import numpy as np
 from quat_math import (quatDiff,
                        quatAngularDiff,
                        quaternion_multiply,
-                       quaternion_inverse)
+                       quaternion_inverse,
+                       quaternion_about_axis)
 
 from functools import partial
 from itertools import product
@@ -72,3 +73,41 @@ def quaternioniAngularDifferenceBatch(q2, q1):
                       q2[:,0]*q1[:,0] + q2[:,1]*q1[:,1] + q2[:,2]*q1[:,2] + q2[:,3]*q1[:,3]], dim=1)
 
 
+def tensorMultiplyBatch(q1,q2):
+    return torch.stack([ q1[:,0]*q2[:,3] + q1[:,1]*q2[:,2] - q1[:,2]*q2[:,1] + q1[:,3]*q2[:,0],
+                        -q1[:,0]*q2[:,2] + q1[:,1]*q2[:,3] + q1[:,2]*q2[:,0] + q1[:,3]*q2[:,1],
+                         q1[:,0]*q2[:,1] - q1[:,1]*q2[:,0] + q1[:,2]*q2[:,3] + q1[:,3]*q2[:,2],
+                        -q1[:,0]*q2[:,0] - q1[:,1]*q2[:,1] - q1[:,2]*q2[:,2] + q1[:,3]*q2[:,3]], dim=1)
+
+    
+def continuousSymmetricAngularDistance(q1, q2, axis_sym):
+    num_q = q1.shape[0];
+   
+    xi_sym = torch.cat((axis_sym, torch.tensor([0.]))).unsqueeze(0)
+    
+    q1_inv = q1*torch.tensor([-1.,-1.,-1.,1.])
+    xi1 = tensorMultiplyBatch(tensorMultiplyBatch(q1,xi_sym),q1_inv)
+
+    q2_inv = q2*torch.tensor([-1.,-1.,-1.,1.])
+    xi2 = tensorMultiplyBatch(tensorMultiplyBatch(q2,xi_sym),q2_inv)
+    
+    dot = (xi1 * xi2).sum(dim=1)
+    return torch.acos(dot.clamp(min = eps-1, max=1-eps))
+
+def symmetricAngularDistance(q1, q2, axes_of_sym, angles_of_sym):
+    if(len(axes_of_sym) == 0):
+        return tensorAngularDiff(q1, q2)
+    axis = axes_of_sym[0]
+    angles = angles_of_sym[0]
+    dist = torch.tensor(np.inf)
+    for th in angles:
+        if(np.isfinite(th)):
+            q_sym = torch.tensor(quaternion_about_axis(th, axis)).float().unsqueeze(0)
+            q2_rot = tensorMultiplyBatch(q2, q_sym)
+            dist = torch.min(dist, symmetricAngularDistance(q1, q2_rot, axes_of_sym[1:], angles_of_sym[1:]))
+        else:
+            return continuousSymmetricAngularDistance(q1,q2,torch.tensor(axis).float())
+    return dist
+
+                 
+                

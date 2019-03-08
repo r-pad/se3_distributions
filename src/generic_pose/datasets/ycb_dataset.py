@@ -31,6 +31,20 @@ def setYCBCamera(renderer, width=640, height=480):
     py = 241.3109
     renderer.setCameraMatrix(fx, fy, px, py, width, height)
 
+def getYCBSymmeties(obj):
+    if(obj == 13):
+        return [[0,0,1]], [[np.inf]]
+    elif(obj == 16):
+        return [[0.9789,-0.2045,0.], [0.,0.,1.]], [[0.,np.pi], [0.,np.pi/2,np.pi,3*np.pi/2]]
+    elif(obj == 19):
+        return [[-0.14142136,  0.98994949,0]], [[0.,np.pi]]
+    elif(obj == 20):
+        return [[0.9931506 , 0.11684125,0]], [[0.,np.pi]]
+    elif(obj == 21):
+        return [[0.,0.,1.]], [[0.,np.pi]]
+    else:
+        return [],[]
+
 class YCBDataset(PoseImageDataset):
     def __init__(self, data_dir, image_set, 
                  obj = None, use_syn_data = False,
@@ -63,6 +77,9 @@ class YCBDataset(PoseImageDataset):
             self.setObject(obj)
         #self.points, self.points_all = self.load_object_points()
 	
+    def getSymmetry(self):
+        return getYCBSymmeties(self.obj)
+
     def loadObjectPoints(self):
         points = [[] for _ in xrange(len(self.classes))]
         num = np.inf
@@ -207,7 +224,7 @@ class YCBDataset(PoseImageDataset):
         self.obj_name = self.getObjectName()
         self.data_filenames = self.loadImageSet()
         self.data_models = SingularArray(self.obj)
-        self.quats = self.loadQuatSet()
+        #self.quats = self.loadQuatSet()
         #print("Size of quats: ", sys.getsizeof(self.quats))
 
     def getModelFilename(self):
@@ -236,8 +253,8 @@ class YCBDataset(PoseImageDataset):
         return quat
 
     def getQuat(self, index):
-        return self.quats[index].copy()
-        #return self.loadQuat(index)
+        #return self.quats[index].copy()
+        return self.loadQuat(index)
 
     def getTrans(self, index, use_gt = True):
         if(use_gt):
@@ -261,7 +278,7 @@ class YCBDataset(PoseImageDataset):
     def getImage(self, index, boarder_ratio=0.25, preprocess = True):
         image_prefix = os.path.join(self.data_dir, 'data', self.data_filenames[index])
         img = cv2.imread(image_prefix + '-color.png')
-        if(self.use_posecnn_masks):
+        if(self.use_posecnn_masks and os.path.exists(image_prefix + '-posecnn-seg.png')):
             mask = 255*(cv2.imread(image_prefix + '-posecnn-seg.png')[:,:,:1] == self.obj).astype('uint8')
         else:
             mask = 255*(cv2.imread(image_prefix + '-label.png')[:,:,:1] == self.obj).astype('uint8')

@@ -108,7 +108,7 @@ class NumpyImageDataset(PoseImageDataset):
             raise AttributeError('Error on file index {} ({}): {}'.format(index, self.data_filenames[index] + '.npy', err))
     '''
     def getImage(self, index):
-        return self.preprocessImages(cv2.imread(self.data_filenames[index] + '.png', cv2.IMREAD_UNCHANGED), normalize_tensor=True)
+        return cv2.imread(self.data_filenames[index] + '.png', cv2.IMREAD_UNCHANGED), None
        
     def __len__(self):
         return len(self.data_filenames)

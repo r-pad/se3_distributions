@@ -45,25 +45,28 @@ def evaluate(obj, weights_dir, results_prefix, image_set, benchmark_dir, save_ou
     base_renders = torch.load(os.path.join(base_render_folder, 'renders.pt'))
     base_vertices = torch.load(os.path.join(base_render_folder, 'vertices.pt'))
   
-  
-    model = gen_pose_net('alexnet','sigmoid', output_dim = 1, pretrained = True, siamese_features = False)
-    files = glob.glob(weights_dir + '**/checkpoint_*.pth', recursive=True)
+ 
+    if(weights_dir.lower() == 'chance'):
+        model = None
+    else:
+        model = gen_pose_net('alexnet','sigmoid', output_dim = 1, pretrained = True, siamese_features = False)
+        files = glob.glob(weights_dir + '**/checkpoint_*.pth', recursive=True)
 
-    max_step = 0
-    weight_file = ''
-    for fn in files:
-        step = int(fn.split('_')[-1][:-4])
-        if(step >= max_step):
-            max_step = step
-            weight_file = fn
+        max_step = 0
+        weight_file = ''
+        for fn in files:
+            step = int(fn.split('_')[-1][:-4])
+            if(step >= max_step):
+                max_step = step
+                weight_file = fn
 
-    assert weight_file != ''
-
-    load_state_dict(model, weight_file)
-    model.eval()
-    model.cuda()
-    optimizer = None #Adam(model.parameters(), lr=1e-5)
-  
+        assert weight_file != ''
+        print('Using weight_file {}'.format(weight_file))
+        load_state_dict(model, weight_file)
+        model.eval()
+        model.cuda()
+        optimizer = None #Adam(model.parameters(), lr=1e-5)
+     
     metrics = evaluateDataset(model, loader, base_vertices, base_renders, 
             save_output = save_output) 
     plotAccuracy(metrics, results_prefix)
@@ -104,11 +107,11 @@ if __name__=='__main__':
         default='/scratch/bokorn/data/benchmarks/ycb/YCB_Video_Dataset/')
     parser.add_argument('--save_output', dest='save_output', action='store_true')
     args = parser.parse_args()
-    
+
     if(args.weights_dir is None):
         args.weights_dir = '/scratch/bokorn/results/ycb_finetune/full_train/model_{}/'.format(args.obj)
     if(args.results_prefix is None):
-        args.results_prefix = '/home/bokorn/results/ycb_finetune/model_{}/{}_'.format(args.obj, args.image_set)
+        args.results_prefix = '/home/bokorn/results/ycb_finetune/full_train/model_{}/{}_'.format(args.obj, args.image_set)
     
     evaluate(args.obj, args.weights_dir, args.results_prefix, args.image_set, args.benchmark_dir, args.save_output)
 

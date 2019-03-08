@@ -41,6 +41,8 @@ class FinetuneYCBTrainer(object):
     def __init__(self, 
                  benchmark_folder,
                  target_object,
+                 train_image_set = 'train_split',
+                 valid_image_set = 'valid_split',
                  render_offset = None,
                  render_proportion = 1.0,
                  brightness_jitter = 0,
@@ -70,7 +72,7 @@ class FinetuneYCBTrainer(object):
         self.falloff_angle = falloff_angle
    
         self.ycb_dataset = YCBDataset(data_dir=benchmark_folder, 
-                                        image_set='train_split',
+                                        image_set=train_image_set,
                                         img_size=img_size,
                                         obj=target_object,
                                         use_syn_data=True,
@@ -131,7 +133,7 @@ class FinetuneYCBTrainer(object):
 
         
         self.valid_dataset = YCBDataset(data_dir=benchmark_folder, 
-                                        image_set='valid_split',
+                                        image_set=valid_image_set,
                                         img_size=img_size,
                                         obj=target_object)
         self.valid_dataset.loop_truth = None
@@ -330,6 +332,8 @@ def main():
     parser.add_argument('--benchmark_folder', type=str, default=None)
     parser.add_argument('--target_object', type=int, default=1)
     parser.add_argument('--renders_folder', type=str, default=None)
+    parser.add_argument('--train_image_set', type=str, default='train_split')
+    parser.add_argument('--valid_image_set', type=str, default='valid_split')
     parser.add_argument('--render_proportion', type=float, default=1.0)
     parser.add_argument('--base_level', type=int, default=2)
     parser.add_argument('--random_render_offset', dest='random_render_offset', action='store_true')
@@ -402,6 +406,8 @@ def main():
                                                                                   
     trainer = FinetuneYCBTrainer(benchmark_folder = args.benchmark_folder,
                                       target_object = args.target_object,
+                                      train_image_set = args.train_image_set,
+                                      valid_image_set = args.valid_image_set,
                                       renders_folder = args.renders_folder,
                                       render_offset = render_offset,
                                       render_proportion = args.render_proportion,

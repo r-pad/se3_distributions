@@ -3,7 +3,7 @@
 Created on Tue Nov 21 17:35:53 2017
 @author: bokorn
 """
-i#from model_renderer.pose_renderer import BpyRenderer
+#from model_renderer.pose_renderer import BpyRenderer
 
 import numpy as np
 import torch
@@ -40,10 +40,10 @@ class PoseGridEstimator(object):
         assert os.path.exists(os.path.join(render_dir, 'renders.pt')), \
             'Render Dir {} does not contain renders.pt'.format(render_dir)
         
+        self.grid_vertices = torch.load(os.path.join(render_dir, 'vertices.pt'))
         self.grid_renders = torch.load(os.path.join(render_dir, 'renders.pt'))
         
         with torch.no_grad():
-            self.grid_vertices = torch.load(os.path.join(render_dir, 'vertices.pt'))
             self.grid_features = getFeatures(self.dist_estimator, to_var(self.grid_renders), image_chunk_size)
             self.grid_size = self.grid_features.shape[0]
         
@@ -54,13 +54,19 @@ class PoseGridEstimator(object):
 
     def getDistances(self, img, preprocess = True):
         if(preprocess):
-            img = preprocessImages(img)
+            img = preprocessImages([img], (224,224),
+                                   normalize_tensors = True,
+                                   background = None,
+                                   background_filenames = None, 
+                                   remove_mask = True, 
+                                   vgg_normalize = False).cuda()
 
         query_features = self.dist_estimator.queryFeatures(img).repeat(self.grid_size,1)
-        dist_est = model.compare_network(grid_features,query_features)
+        dist_est = self.dist_estimator.compare_network(self.grid_features,query_features)
         
         if(self.kernal is not None):
             dist_est = torch.mm(test, kernal_norm)
+        return dist_est
 
     def dist2Poses(self, dists, num_modes = None, mode_selection = None):
         mode_selection = mode_selection if mode_selection else self.mode_selection
@@ -69,9 +75,9 @@ class PoseGridEstimator(object):
         assert num_modes > 0, 'Must have atleaset one mode: {} < 1'.format(num_modes)
         if(mode_selection == self.MODE_MAX):
             if(num_modes == 1):
-                mode_idxs = [torch.argmin(self.dist_sign*dists)]
+                mode_idxs = torch.argmax(dists)
             else:
-                mode_idxs = torch.argsort(self.dist_sign*dists)[:num_modes]
+                mode_idxs = torch.argsort(dists, descending=True)[:num_modes]
         elif(mode_selection == self.MODE_MEANSHIFT):
             raise NotImplemented()
         else:

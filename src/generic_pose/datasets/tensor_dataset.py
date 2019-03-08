@@ -9,7 +9,7 @@ import torch
 import numpy as np
 import pickle
 
-from quat_math import quaternionBatchMultiply, euler_matrix, quaternion_matrix 
+from quat_math import quaternionBatchMultiply, euler_matrix, quaternion_matrix, random_quaternion 
 
 from generic_pose.bbTrans.discretized4dSphere import S3Grid
 from generic_pose.utils import SingularArray
@@ -24,8 +24,10 @@ import quat_math
 class TensorDataset(PoseImageDataset):
     def __init__(self, data_dir, 
                  model_filename = None, 
+                 obj = -1,
                  transform_func = ycbRenderTransform,
                  offset_quat = None,
+                 camera_dist = 0.33,
                  base_level = 2,
                  *args, **kwargs):
 
@@ -35,13 +37,15 @@ class TensorDataset(PoseImageDataset):
         if(model_filename is None):
             model_filename = ''
         self.append_rendered = False
-        self.data_models = SingularArray(1) 
+        self.data_models = SingularArray(obj) 
         if(os.path.exists(os.path.join(data_dir, 'renders.pkl'))):
+            print('Loading renders from {}'.format(data_dir))
             with open(os.path.join(data_dir, 'renders.pkl'), 'rb') as f:
                 self.base_renders = pickle.load(f)
             #self.base_renders = torch.load(os.path.join(data_dir, 'renders.pt'))
             self.base_vertices = torch.load(os.path.join(data_dir, 'vertices.pt'))
         else:
+            print('Rendering poses for {}'.format(model_filename))
             from model_renderer.pose_renderer import BpyRenderer
             grid = S3Grid(base_level)
             renderer = BpyRenderer(transform_func = transform_func)
@@ -65,7 +69,7 @@ class TensorDataset(PoseImageDataset):
                 trans_mat = quaternion_matrix(q)
                 ycb_mat = euler_matrix(-np.pi/2,0,0)
                 trans_mat = trans_mat.dot(ycb_mat)
-                trans_mat[:3,3] = [0, 0, 1] 
+                trans_mat[:3,3] = [0, 0, camera_dist] 
                 img = renderer.renderTrans(trans_mat)
                 rendered_img = cropAndPad(img)
                 self.base_renders.append(rendered_img)
@@ -78,7 +82,8 @@ class TensorDataset(PoseImageDataset):
                 pickle.dump(self.base_renders, f)
             #torch.save(self.base_renders, os.path.join(data_dir, 'renders.pt'))
             torch.save(self.base_vertices, os.path.join(data_dir, 'vertices.pt'))
- 
+            self.model_dir = None
+
     def getQuat(self, index):
         return self.base_vertices[index]
 
@@ -88,6 +93,27 @@ class TensorDataset(PoseImageDataset):
         else:
             rendered_img = None
         return self.base_renders[index], rendered_img
+
+    def getObjectPoints(self):
+        if(self.model_dir is None):
+            return None
+        point_file = os.path.join(self.model_dir, 'models', self.model_name, 'points.xyz')
+        assert os.path.exists(point_file), 'Path does not exist: {}'.format(point_file)
+        points = np.loadtxt(point_file)
+
+        return points
+
+    def getObjectName(self):
+        return self.model_name
+
+    def getTrans(self, index, use_gt):
+        if(self.model_dir is None):
+            return None
+        if(use_gt):
+            return quaternion_matrix(self.base_vertices[index])
+        else:
+            return quaternion_matrix(random_quaternion())
+
 
     def __len__(self):
         return self.base_vertices.shape[0]

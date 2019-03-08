@@ -22,7 +22,7 @@ from generic_pose.losses.distance_loss import (rawDistanceLoss,
 
 #from generic_pose.losses.quaternion_loss import quaternionAngles
 #from generic_pose.utils.pose_processing import quatDiffBatch, quatAngularDiffBatch
-from generic_pose.utils.pose_processing import quatAngularDiffDot, quatAngularDiffBatch
+from generic_pose.utils.pose_processing import quatAngularDiffDot, quatAngularDiffBatch, symmetricAngularDistance
 from generic_pose.losses.distance_utils import getDistanceLoss, getIndices
 
 def evaluateRenderedDistance(model, 
@@ -38,7 +38,10 @@ def evaluateRenderedDistance(model,
                              per_instance = False,
                              sample_by_loss = False,
                              top_n = 0,
-                             sampling_distribution = None):
+                             sampling_distribution = None,
+                             axes_of_sym = [],
+                             angles_of_sym = [],
+                             ):
     #t = time.time()
     distanceLoss, distanceError, dist_sign = getDistanceLoss(loss_type, falloff_angle)
     model.eval()
@@ -58,7 +61,8 @@ def evaluateRenderedDistance(model,
         raise ValueError('Invalid Number of Image Channels: {}, Must be [3,4,6,8]'.format(query_imgs.shape[1])) 
     real_imgs = to_var(query_imgs[:,:split_idx])
     rendered_imgs = query_imgs[:,split_idx:]
-    query_quats = to_np(query_quats)
+    query_quats = torch.tensor(query_quats).float()
+    grid_quats = torch.tensor(grid_quats).float()
     #print("Get Images:", time.time()-t)
     #t = time.time()
     
@@ -73,7 +77,10 @@ def evaluateRenderedDistance(model,
                                                       sample_by_loss = sample_by_loss,
                                                       top_n = top_n,
                                                       calc_metrics = calc_metrics,
-                                                      sampling_distribution = sampling_distribution)
+                                                      sampling_distribution = sampling_distribution,
+                                                      axes_of_sym = axes_of_sym,
+                                                      angles_of_sym = angles_of_sym, 
+                                                      )
 
     for k,v in results.items(): 
         results[k] = np.mean(v) 
@@ -82,8 +89,10 @@ def evaluateRenderedDistance(model,
     #t = time.time()
     torch.cuda.empty_cache()
     #import IPython; IPython.embed()
-    dist_true = to_var(torch.tensor(quatAngularDiffBatch(query_quats[query_indices], 
-                                                         grid_quats[grid_indices]))).detach()
+#    dist_true = to_var(torch.tensor(quatAngularDiffBatch(query_quats[query_indices], 
+#                                                         grid_quats[grid_indices]))).detach()
+    dist_true = to_var(symmetricAngularDistance(query_quats[query_indices], grid_quats[grid_indices], 
+                                                axes_of_sym, angles_of_sym)).detach()
 #    quat_true = to_var(torch.tensor(quatDiffBatch(to_np(query_quats[query_indices]), 
 #                                                       grid_quats[grid_indices]))).detach()
     #print("Calc Diff:", time.time()-t)
@@ -101,7 +110,7 @@ def evaluateRenderedDistance(model,
         #zero_quats = to_var(torch.zeros((real_imgs.shape[0],4), dtype=torch.float64)).detach()
         #zero_quats[:,3] = 1
         #quat_true = torch.cat((zero_quats, quat_true))
-        dist_true = torch.cat((to_var(torch.zeros(real_imgs.shape[0], dtype=torch.float64)).detach(), dist_true))
+        dist_true = torch.cat((to_var(torch.zeros(real_imgs.shape[0], dtype=torch.float32)).detach(), dist_true))
     #print("Cat Exact:", time.time()-t)
     #t = time.time()
     grid_features = model.originFeatures(grid_img_samples)

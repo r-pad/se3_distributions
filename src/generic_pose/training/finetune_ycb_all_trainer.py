@@ -25,9 +25,9 @@ from logger import Logger
 from generic_pose.bbTrans.discretized4dSphere import S3Grid
 #from generic_pose.datasets.concat_dataset import ConcatDataset
 from generic_pose.datasets.tensor_dataset import TensorDataset
-from generic_pose.datasets.ycb_dataset import YCBDataset, ycbRenderTransform, getYCBSymmeties
+from generic_pose.datasets.ycb_dataset import YCBDataset, ycbRenderTransform
 from generic_pose.utils import to_np, to_var
-from generic_pose.training.finetune_distance_utils import evaluateRenderedDistance
+from generic_pose.training.finetune_distance_all_utils import evaluateRenderedDistance
 from generic_pose.utils.image_preprocessing import preprocessImages
 from quat_math import random_quaternion
 from generic_pose.utils.tqdm_utils import std_out_err_redirect_tqdm
@@ -40,7 +40,11 @@ resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))
 class FinetuneYCBTrainer(object):
     def __init__(self, 
                  benchmark_folder,
-                 target_object,
+                 train_image_set,
+                 valid_image_set,
+                 num_grid_samples = 16,
+                 top_n = 0,
+                 use_posecnn_masks = False,
                  use_exact_render = False,
                  render_offset = None,
                  render_proportion = None,
@@ -55,12 +59,12 @@ class FinetuneYCBTrainer(object):
                  max_occlusion_area = (0, 0),
                  augmentation_prob = 0,
                  base_level = 2,
-                 renders_folder = None,
                  img_size = (224,224),
                  falloff_angle = np.pi/4,
                  batch_size = 16,
                  num_workers = 4,
                  background_filenames = None,
+                 vgg_normalize = False,
                  seed = 0):
         
         np.random.seed(seed)
@@ -69,11 +73,22 @@ class FinetuneYCBTrainer(object):
         self.img_size = img_size
         self.falloff_angle = falloff_angle
         self.use_exact_render = use_exact_render
-        self.axes_of_sym, self.angles_of_sym = getYCBSymmeties(target_object) 
-        self.ycb_dataset = YCBDataset(data_dir=benchmark_folder, 
-                                        image_set='train',
+        self.ycb_datasets = []
+        self.rendered_datasets = []
+        ycb_size = 0
+        rendered_size = 0
+        classes = ['__background__']
+        with open(os.path.join(benchmark_folder, 'image_sets', 'classes.txt')) as f:
+            classes.extend([x.rstrip('\n') for x in f.readlines()])
+
+        for obj in range(1,22):
+            grid_data_dir = os.path.join(benchmark_folder,'base_renders', 
+                    classes[obj], '{}'.format(base_level))
+            self.ycb_datasets.append(YCBDataset(data_dir=benchmark_folder, 
+                                        image_set=train_image_set,
                                         img_size=img_size,
-                                        obj=target_object,
+                                        obj=obj,
+                                        use_posecnn_masks=use_posecnn_masks,
                                         use_syn_data=True,
                                         brightness_jitter = brightness_jitter,
                                         contrast_jitter = contrast_jitter,
@@ -84,16 +99,20 @@ class FinetuneYCBTrainer(object):
                                         rotate_image = rotate_image,
                                         max_num_occlusions = max_num_occlusions,
                                         max_occlusion_area = max_occlusion_area,
-                                        augmentation_prob = augmentation_prob)
+                                        augmentation_prob = augmentation_prob,
+                                        grid_data_dir = grid_data_dir,
+                                        ))
 
-        self.ycb_dataset.loop_truth = None
-        self.ycb_dataset.append_rendered = use_exact_render
-        print("YCB Data Loaded")
-        
-        self.rendered_dataset = TensorDataset(renders_folder,
-                                              self.ycb_dataset.getModelFilename(),
+            self.ycb_datasets[-1].loop_truth = None
+            self.ycb_datasets[-1].append_rendered = use_exact_render
+            self.ycb_datasets[-1].top_n = top_n
+            self.ycb_datasets[-1].num_grid_samples = num_grid_samples
+
+            renders_folder = os.path.join(benchmark_folder, 'base_renders', 'model_{}'.format(obj))
+            self.rendered_datasets.append(TensorDataset(renders_folder,
+                                              self.ycb_datasets[-1].getModelFilename(),
+                                              obj = obj,
                                               img_size=img_size,
-                                              offset_quat = render_offset,
                                               base_level = base_level,
                                         brightness_jitter = brightness_jitter,
                                         contrast_jitter = contrast_jitter,
@@ -104,83 +123,71 @@ class FinetuneYCBTrainer(object):
                                         rotate_image = rotate_image,
                                         max_num_occlusions = max_num_occlusions,
                                         max_occlusion_area = max_occlusion_area,
-                                        augmentation_prob = augmentation_prob)
+                                        augmentation_prob = augmentation_prob,
+                                        grid_data_dir = grid_data_dir,
+                                        ))
 
-        self.rendered_dataset.loop_truth = None
-        self.rendered_dataset.append_rendered = use_exact_render
+            self.rendered_datasets[-1].loop_truth = None
+            self.rendered_datasets[-1].append_rendered = use_exact_render
+            self.rendered_datasets[-1].top_n = top_n
+            self.rendered_datasets[-1].num_grid_samples = num_grid_samples
+            if(vgg_normalize):
+                self.ycb_datasets[-1].vgg_normalize = True
+                self.ycb_datasets[-1].background = 0.0
+                self.rendered_datasets[-1].vgg_normalize = True
+                self.rendered_datasets[-1].background = 0.0
+            ycb_size += len(self.ycb_datasets[-1])
+            rendered_size += len(self.rendered_datasets[-1])
+
         print("Renders Loaded")
         if(render_proportion is None):
             render_multi = 1
             ycb_multi = 1
         else:
             ycb_multi = 1
-            render_multi = int(max(1,
-                np.ceil(render_proportion * len(self.ycb_dataset)/len(self.rendered_dataset))))
-            print('YCB Size: {}'.format(len(self.ycb_dataset)))
+            render_multi = int(max(1,np.ceil(render_proportion * ycb_size/rendered_size)))
+            print('YCB Size: {}'.format(ycb_size))
             print('YCB Mulit: {}'.format(ycb_multi))
-            print('Render Size: {}'.format(len(self.rendered_dataset)))
+            print('Render Size: {}'.format(rendered_size))
             print('Render Mulit: {}'.format(render_multi))
-        self.train_dataset = ConcatDataset((self.ycb_dataset,)*ycb_multi + (self.rendered_dataset,)*render_multi)
+        self.train_dataset = ConcatDataset(self.ycb_datasets*ycb_multi + self.rendered_datasets*render_multi)
         self.train_loader = DataLoader(self.train_dataset,
                                      num_workers=num_workers-1, 
                                      batch_size=batch_size, 
                                      shuffle=True)
 
-        
-        self.valid_dataset = YCBDataset(data_dir=benchmark_folder, 
-                                        image_set='valid_split',
+        self.valid_datasets = []
+        for obj in range(1,22): 
+            grid_data_dir = os.path.join(benchmark_folder,'base_renders', 
+                    classes[obj], '{}'.format(base_level))
+            self.valid_datasets.append(YCBDataset(data_dir=benchmark_folder, 
+                                        image_set=valid_image_set,
+                                        use_posecnn_masks = use_posecnn_masks,
                                         img_size=img_size,
-                                        obj=target_object)
-        self.valid_dataset.loop_truth = None
-        #self.valid_dataset.append_rendered = use_exact_render
+                                        obj=obj,
+                                        grid_data_dir = grid_data_dir,
+                                        ))
+            self.valid_datasets[-1].loop_truth = None
+            self.valid_datasets[-1].top_n = top_n
+            self.valid_datasets[-1].num_grid_samples = num_grid_samples
+            if(vgg_normalize):
+                self.valid_datasets[-1].vgg_normalize = True
+                self.valid_datasets[-1].background = 0.0
         
+        self.valid_dataset = ConcatDataset(self.valid_datasets)
         self.valid_loader = DataLoader(self.valid_dataset,
                                        num_workers=1, 
                                        batch_size=batch_size, 
                                        shuffle=True)
- 
-         
-        self.grid = S3Grid(base_level)
-        self.renderer = BpyRenderer(transform_func = ycbRenderTransform)
-        self.renderer.loadModel(self.ycb_dataset.getModelFilename(),
-                                emit = 0.5)
-        self.renderPoses = self.renderer.renderPose
-        base_render_folder = os.path.join(benchmark_folder,
-                                          'base_renders',
-                                          self.ycb_dataset.getObjectName(),
-                                          '{}'.format(base_level))
-        if(os.path.exists(os.path.join(base_render_folder, 'renders.pt'))):
-            self.base_renders = torch.load(os.path.join(base_render_folder, 'renders.pt'))
-            self.base_vertices = torch.load(os.path.join(base_render_folder, 'vertices.pt'))
-        else:
-            self.base_vertices = np.unique(self.grid.vertices, axis = 0)
-            self.base_renders = preprocessImages(self.renderPoses(self.base_vertices, camera_dist = 0.33),
-                                                 img_size = self.img_size,
-                                                 normalize_tensors = True).float()
-            import pathlib
-            pathlib.Path(base_render_folder).mkdir(parents=True, exist_ok=True)
-            torch.save(self.base_renders, os.path.join(base_render_folder, 'renders.pt'))
-            torch.save(self.base_vertices, os.path.join(base_render_folder, 'vertices.pt'))
-        
-        print("Grid Loaded")
-        self.base_renders.pin_memory()
-        self.base_size = self.base_vertices.shape[0]
-
     def train(self, model, 
               log_dir,
               checkpoint_dir,
               loss_type = 'exp',
-              num_indices = 256,
-              image_chunk_size = 500,
-              per_instance = False,
-              top_n = 0,
-              sample_by_loss = False,
               num_epochs = 100000,
               log_every_nth = 100,
-              checkpoint_every_nth = 10000,
+              checkpoint_every_nth = 1000,
               lr = 1e-5,
               optimizer = 'SGD',
-              sampling_distribution = None, 
               start_idx = 0,
               num_steps = 200000):
         
@@ -231,34 +238,19 @@ class FinetuneYCBTrainer(object):
             log_time = time.time()
             dataset_size = len(self.train_loader)
             for epoch_idx in range(1, num_epochs+1):
-                for batch_idx, (query_imgs, query_quats, _1, _2) in enumerate(self.train_loader):
-                    del _1, _2
+                for batch_idx, (query_imgs, grid_imgs, grid_dist) in enumerate(self.train_loader):
                     pbar.update()
                     log_data = not((cumulative_batch_idx+1) % log_every_nth)
-                    #pre_info, pre_objs  = getTensors()     
                     torch.cuda.empty_cache()
-                    #import IPython; IPython.embed()
-                    train_results = evaluateRenderedDistance(model, #self.grid, self.renderer,
-                                                             query_imgs, query_quats,
-                                                             self.base_renders, self.base_vertices,
+                    train_results = evaluateRenderedDistance(model, 
+                                                             query_imgs, grid_imgs, grid_dist,
                                                              loss_type = loss_type,
                                                              falloff_angle = self.falloff_angle,
                                                              optimizer = self.optimizer, 
                                                              calc_metrics = log_data,
-                                                             num_indices = num_indices,
-                                                             image_chunk_size = image_chunk_size,
-                                                             per_instance = per_instance,
-                                                             sample_by_loss = sample_by_loss,
-                                                             top_n = top_n,
-                                                             sampling_distribution = sampling_distribution,
-                                                             axes_of_sym = self.axes_of_sym, 
-                                                             angles_of_sym = self.angles_of_sym,
                                                              )
-
-                    #print(len(gc.get_objects()))
-                    #print(sum(sys.getsizeof(i) for i in gc.get_objects()))
+                    del query_imgs, grid_imgs, grid_dist
                     torch.cuda.empty_cache()
-                    #import IPython; IPython.embed()
 
                     if log_data:
                         print("epoch {} ({}):: cumulative_batch_idx {}".format(epoch_idx, time.time() - log_time, cumulative_batch_idx + 1))
@@ -288,20 +280,14 @@ class FinetuneYCBTrainer(object):
                         #########################################
                         ############ VALIDATION SETS ############
                         #########################################
-                        query_imgs, query_quats, _1, _2 = next(iter(self.valid_loader))
-                        del _1,  _2
+                        query_imgs, grid_imgs, grid_dist = next(iter(self.valid_loader))
                         torch.cuda.empty_cache()
                         valid_results = evaluateRenderedDistance(model, #self.grid, self.renderer,
-                                                                 query_imgs, query_quats,
-                                                                 self.base_renders, self.base_vertices,
+                                                                 query_imgs, grid_imgs, grid_dist,
                                                                  loss_type = loss_type,
                                                                  falloff_angle = self.falloff_angle,
                                                                  optimizer = None, 
                                                                  calc_metrics = True,
-                                                                 num_indices = num_indices,
-                                                                 image_chunk_size = image_chunk_size,
-                                                                 axes_of_sym = self.axes_of_sym, 
-                                                                 angles_of_sym = self.angles_of_sym,
                                                                  )
 
                         torch.cuda.empty_cache()
@@ -347,15 +333,11 @@ def main():
     parser = ArgumentParser()
 
     parser.add_argument('--benchmark_folder', type=str, default=None)
-    parser.add_argument('--target_object', type=int, default=1)
-    parser.add_argument('--renders_folder', type=str, default=None)
+    parser.add_argument('--train_image_set', type=str, default='train_split')
+    parser.add_argument('--valid_image_set', type=str, default='valid_split')
     parser.add_argument('--render_proportion', type=float, default=1.0)
     parser.add_argument('--base_level', type=int, default=2)
     parser.add_argument('--use_exact_render', dest='use_exact_render', action='store_true')    
-    parser.add_argument('--per_instance_sampling', dest='per_instance', action='store_true')    
-    parser.add_argument('--sample_by_loss', dest='sample_by_loss', action='store_true')    
-    parser.add_argument('--sampling_distribution', type=str, default='None')    
-    parser.add_argument('--random_render_offset', dest='random_render_offset', action='store_true')
 
     parser.add_argument('--augmentation_probability', type=float, default=0)    
     parser.add_argument('--brightness_jitter', type=float, default=0)
@@ -373,10 +355,9 @@ def main():
     parser.add_argument('--weight_file', type=str, default=None)
     parser.add_argument('--background_data_file', type=str, default=None)
 
-    parser.add_argument('--num_indices', type=int, default=256)
-    parser.add_argument('--image_chunk_size', type=int, default=500)
+    parser.add_argument('--num_grid_samples', type=int, default=256)
     parser.add_argument('--top_n', type=int, default=0)
-    parser.add_argument('--falloff_angle', type=float, default=45.0)
+    parser.add_argument('--falloff_angle', type=float, default=20.0)
 
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--num_workers', type=int, default=4)
@@ -409,11 +390,6 @@ def main():
     else:
         background_filenames = None
      
-    if(args.random_render_offset):
-        render_offset = random_quaternion()
-    else:
-        render_offset = None
-  
     if(args.max_translation is not None):
         max_translation = (args.max_translation, args.max_translation)
     else:
@@ -426,12 +402,15 @@ def main():
         if(args.min_scale is None):
             args.min_scale = 1
         max_scale = (args.min_scale, args.max_scale)                                      
-                                                                                  
+    
+    vgg_normalize ='posecnn' in args.model_type
+
     trainer = FinetuneYCBTrainer(benchmark_folder = args.benchmark_folder,
-                                      target_object = args.target_object,
-                                      renders_folder = args.renders_folder,
+                                      train_image_set = args.train_image_set,
+                                      valid_image_set = args.valid_image_set,
+                                      num_grid_samples = args.num_grid_samples,
+                                      top_n = args.top_n,
                                       use_exact_render = args.use_exact_render,
-                                      render_offset = render_offset,
                                       render_proportion = args.render_proportion,
                                       brightness_jitter = args.brightness_jitter,
                                       contrast_jitter = args.contrast_jitter,
@@ -449,6 +428,7 @@ def main():
                                       batch_size = args.batch_size,
                                       num_workers = args.num_workers,
                                       background_filenames = background_filenames,
+                                      vgg_normalize = vgg_normalize,
                                       seed = args.random_seed,
                                       )
 
@@ -483,21 +463,13 @@ def main():
     if weight_file is not None:
         load_state_dict(model, weight_file)
 
-    sampling_distribution = eval(args.sampling_distribution)
-    print('Sampling Distribution: ', sampling_distribution)
     trainer.train(model, log_dir, checkpoint_dir,
                   loss_type = args.loss_type,
-                  num_indices = args.num_indices,
-                  image_chunk_size = args.image_chunk_size,
-                  per_instance = args.per_instance,
-                  sample_by_loss = args.sample_by_loss,
-                  top_n = args.top_n,
                   num_epochs = args.num_epochs,
                   log_every_nth = args.log_every_nth,
                   lr = args.lr,
                   optimizer = args.optimizer,
                   checkpoint_every_nth = args.checkpoint_every_nth,
-                  sampling_distribution = sampling_distribution,
                   start_idx = max_step,
                   num_steps = args.num_steps)
 

@@ -4,6 +4,7 @@ Created on Tue Jan  2 22:38:19 2018
 
 @author: bokorn
 """
+import os
 import cv2
 import numpy as np
 import time
@@ -14,6 +15,7 @@ import torchvision.transforms as transforms
 from generic_pose.utils.image_preprocessing import preprocessImages
 from generic_pose.utils.data_augmentation import augmentData
 from quat_math import quatDiff, quatAngularDiff, angularPDF, invAngularPDF
+from generic_pose.utils.pose_processing import tensorAngularAllDiffs
 
 class PoseImageDataset(Dataset):
     def __init__(self, 
@@ -30,6 +32,8 @@ class PoseImageDataset(Dataset):
                  max_occlusion_percent = 0.5,
                  augmentation_prob = 0.0,
                  remove_mask = True,
+                 grid_data_dir = None,
+                 grid_prefix = 'tight',
                  *args, **kwargs):
 
         super(PoseImageDataset, self).__init__()
@@ -61,6 +65,15 @@ class PoseImageDataset(Dataset):
         self.vgg_normalize = False
         self.background = None
 
+        if(grid_data_dir is not None):
+            self.grid_data = True
+            self.base_vertices = torch.load(os.path.join(grid_data_dir, 'vertices.pt'))
+            self.grid_render_name = os.path.join(grid_data_dir, grid_prefix + '_{:04d}.png')
+            self.num_grid_samples = 16
+            self.top_n = 1
+        else:
+            self.grid_data = False
+
     def __getitem__(self, index):
         if(self.loop_truth is None):
         #    return self.getPair(index)
@@ -68,6 +81,8 @@ class PoseImageDataset(Dataset):
             return self.getData(index)
         else:
             return self.getLoop(index, loop_truth=self.loop_truth)
+
+
 
     def getPairIndex(self, model, origin_quat):
         assert len(self.model_idxs[model]) > 0, "Model must have > 1 view (model: {})".format(model)
@@ -130,15 +145,44 @@ class PoseImageDataset(Dataset):
         quat = self.getQuat(index)
         #print("Quat Time: ", time.time()-t)
         #t = time.time()
+        img, quat = self.preprocessImages(img, quat, normalize_tensor=True, augment_img=True) 
         if(exact_img is not None):
-            real_img, quat = self.preprocessImages(img, quat, normalize_tensor=True, augment_img=True) 
             exact_img, _ = self.preprocessImages(exact_img, None, normalize_tensor=True) 
-            img = torch.cat((real_img, exact_img), 0)
-        else:
-        #    img, quat = self.preprocessImages(img, quat, normalize_tensor=True, augment_img=True) 
-            img, quat = self.preprocessImages(img, quat, normalize_tensor=True, augment_img=True) 
         #print("Preprocessing Time: ", time.time()-t)
-        return img, quat, model, index
+        
+        if(self.grid_data):
+            num_random_samples = self.num_grid_samples - self.top_n 
+            if(exact_img is not None):
+                num_random_samples -= 1
+            distances = tensorAngularAllDiffs(torch.tensor(quat).unsqueeze(0), 
+                    torch.tensor(self.base_vertices)).flatten()
+            sorted_indices = torch.argsort(distances)
+            rand_indices = np.random.choice(sorted_indices.shape[0] - self.top_n, 
+                    num_random_samples) + self.top_n
+            sample_indices = torch.cat((sorted_indices[:self.top_n], sorted_indices[rand_indices]))
+            dist_samples = distances[sample_indices]
+            rendered_samples = []
+            grid_imgs = []
+            for idx in sample_indices:
+                grid_imgs.append(cv2.imread(self.grid_render_name.format(idx),cv2.IMREAD_UNCHANGED))
+                if(grid_imgs[-1] is None):
+                    print('None image at {}'.format(self.grid_render_name.format(idx)))
+
+            grid_imgs = preprocessImages(grid_imgs, self.img_size,
+                                         normalize_tensors = True,
+                                         background = self.background,
+                                         background_filenames = self.background_filenames, 
+                                         remove_mask = self.remove_mask, 
+                                         vgg_normalize = self.vgg_normalize) 
+            if(exact_img is not None):
+                dist_samples = torch.cat((dist_samples, torch.zeros(1).double()))
+                grid_imgs = torch.cat((grid_imgs, exact_img.unsqueeze(0)))
+            return img, grid_imgs, dist_samples
+            
+        else:
+            if(exact_img is not None):
+                img = torch.cat((img, exact_img), 0)
+            return img, quat, model, index
 
     def getLoop(self, index, loop_truth=[1,0]):
         images = []

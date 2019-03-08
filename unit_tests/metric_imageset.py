@@ -14,6 +14,7 @@ import numpy as np
 from generic_pose.datasets.ycb_dataset import YCBDataset, ycbRenderTransform
 from generic_pose.utils.ycb_utils import getOcclusionPercentage, setYCBCameraMatrix 
 from generic_pose.utils.pose_processing import quatAngularDiffDot
+from tqdm import tqdm
 
 def main():
     augmentation_prob = 0.0
@@ -21,9 +22,8 @@ def main():
     dataset = YCBDataset(data_dir=benchmark_folder,
                          image_set='train_split',
                          img_size=(224,224),
-                         obj=1,
-                         use_syn_data = True)
-
+                         obj=1)
+                         #use_syn_data = True)
     dataset.loop_truth = None
  
     train_quats = np.load(os.path.join(benchmark_folder, 'quats', 
@@ -39,25 +39,28 @@ def main():
     mean_h = []
     mean_s = []
     mean_v = []
-    for idx in range(len(dataset)):
-        img = dataset.getImage(idx, preprocess = False)
+    for idx in tqdm(range(len(dataset))):
+        img, _ = dataset.getImage(idx, preprocess = False)
         if(img is None):
             print('Image at {} is None'.format(idx))
-            continue
-    return
-
-    if(False):
-        occlusion.append(getOcclusionPercentage(dataset, renderer, idx))
-        min_distance.append(quatAngularDiffDot(np.expand_dims(dataset.getQuat(idx), 0), 
-            train_quats).min()*180/np.pi)
-        mask = img[:,:,3]
-        hsv = cv2.cvtColor(img[:,:,:3], cv2.COLOR_BGR2HSV)
-        h = hsv[:,:,0]
-        s = hsv[:,:,1]
-        v = hsv[:,:,2]
-        mean_h.append(h[mask==255].mean())
-        mean_s.append(s[mask==255].mean())
-        mean_v.append(v[mask==255].mean())
+            occlusion.append(np.nan)
+            min_distance.append(np.nan) 
+            #mean_h.append(np.nan)
+            #mean_s.append(np.nan)
+            #mean_v.append(np.nan)
+ 
+        else:
+            occlusion.append(getOcclusionPercentage(dataset, renderer, idx))
+            min_distance.append(quatAngularDiffDot(np.expand_dims(dataset.getQuat(idx), 0), 
+                train_quats).min()*180/np.pi)
+            #mask = img[:,:,3]
+            #hsv = cv2.cvtColor(img[:,:,:3], cv2.COLOR_BGR2HSV)
+            #h = hsv[:,:,0]
+            #s = hsv[:,:,1]
+            #v = hsv[:,:,2]
+            #mean_h.append(h[mask==255].mean())
+            #mean_s.append(s[mask==255].mean())
+            #mean_v.append(v[mask==255].mean())
     
     np.savez(results_dir + 'train_w_syn_metrics.npz', 
              occlusion = occlusion,

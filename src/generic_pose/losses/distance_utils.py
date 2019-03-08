@@ -20,9 +20,9 @@ from generic_pose.losses.distance_loss import (rawDistanceLoss,
                                                negExpDistanceError)
 
 from generic_pose.utils.pose_processing import tensorAngularDiff, tensorAngularAllDiffs, getGaussianKernal
-from generic_pose.utils.pose_processing import quatAngularDiffDot
+from generic_pose.utils.pose_processing import quatAngularDiffDot, symmetricAngularDistance
 from generic_pose.eval.posecnn_eval import evaluateQuat, getYCBThresholds
-from quat_math import invAngularPDF, quaternion_from_matrix, quatAngularDiff
+from quat_math import invAngularPDF, quaternion_from_matrix, quatAngularDiff, random_quaternion, quaternion_multiply
 
 def getDistanceLoss(loss_type, falloff_angle):
     if(loss_type.lower() == 'exp'):
@@ -72,13 +72,14 @@ def evaluateDataset(model, data_loader,
         dataset = data_loader.dataset
         points = dataset.getObjectPoints()
         cls = dataset.getObjectName()
-        use_sym = cls == '024_bowl' or cls == '036_wood_block' or cls == '061_foam_brick'
-        thresholds = getYCBThresholds()
-        thresh = thresholds[dataset.obj]
+        use_sym = cls == '024_bowl' or cls == '036_wood_block' or cls == '061_foam_brick' or cls == '051_large_clamp' or cls == '052_extra_large_clamp'  
+        #thresholds = getYCBThresholds()
+        #thresh = thresholds[dataset.obj]
         
-        model.eval()
-        grid_imgs = to_var(grid_imgs)
-        grid_features = getFeatures(model, grid_imgs, image_chunk_size)
+        if(model is not None):
+            model.eval()
+            grid_imgs = to_var(grid_imgs)
+            grid_features = getFeatures(model, grid_imgs, image_chunk_size)
 
         agg_metrics = {} 
         agg_metrics['top_idx'] = [] 
@@ -90,6 +91,8 @@ def evaluateDataset(model, data_loader,
         agg_metrics['error_add'] = [] 
         agg_metrics['error_add_pcnn'] = [] 
         agg_metrics['dist_pcnn'] = [] 
+        agg_metrics['quat_gt'] = []
+        agg_metrics['quat_pcnn'] = []
         agg_metrics['idx'] = []
         
         if(save_output):
@@ -110,15 +113,20 @@ def evaluateDataset(model, data_loader,
             #t = time.time()
             for q_img, d_true, q_true, idx in zip(query_imgs, dist_true, query_quats, indices):
                 if(torch.norm(q_true) > 0):
-                    _, metrics = evaluateImage(model, loss_type, falloff_angle, grid_features, 
+                    if(model is not None):
+                        _, metrics = evaluateImage(model, loss_type, falloff_angle, grid_features, 
                                                     q_img.unsqueeze(0), d_true.flatten(), 
                                                     kernal = kernal,
                                                     save_output = save_output)
-                    for k,v in agg_metrics.items():
-                        if(k in metrics.keys()):
-                            v.append(metrics[k])
-                       
-                    q_pred = grid_quats[metrics['top_idx']]
+                        for k,v in agg_metrics.items():
+                            if(k in metrics.keys()):
+                                v.append(metrics[k])
+                           
+                        q_pred = grid_quats[metrics['top_idx']]
+                    else:
+                        q_pred = random_quaternion()
+                        #q_pred = quaternion_multiply(q_true, quaternion_about_axis(np.pi, [1,0,0]))
+                        agg_metrics['dist_top'].append(quatAngularDiff(q_pred,q_true))
                     mat_pcnn = dataset.getTrans(idx, use_gt=False)
                     mat_true = dataset.getTrans(idx, use_gt=True)
                     if(mat_pcnn is not None):
@@ -133,9 +141,12 @@ def evaluateDataset(model, data_loader,
                         err = float('NAN')
                         err_pcnn = float('NAN')
                         dist_pcnn = float('NAN')
+                        q_pcnn = np.zeros(4) 
                     agg_metrics['error_add'].append(err)
                     agg_metrics['error_add_pcnn'].append(err_pcnn)
                     agg_metrics['dist_pcnn'].append(dist_pcnn)
+                    agg_metrics['quat_gt'].append(to_np(q_true))
+                    agg_metrics['quat_pcnn'].append(q_pcnn)
                     agg_metrics['idx'].append(idx)
                 else:
                     for k,v in agg_metrics.items():
@@ -244,9 +255,12 @@ def getIndices(model,
                sample_by_loss = False,
                top_n = 0,
                calc_metrics = False,
-               sampling_distribution = None):
-   
-    dist_true = quatAngularDiffDot(query_quats, grid_quats)
+               sampling_distribution = None,
+               axes_of_sym = [],
+               angles_of_sym = [],
+               ):
+    dist_true = to_np(symmetricAngularDistance(query_quats.repeat([1,grid_quats.shape[0]]).view([-1,4]), 
+        grid_quats.repeat([query_quats.shape[0],1]), axes_of_sym, angles_of_sym).view(query_quats.shape[0],-1))
     batch_size = query_imgs.shape[0]
 
     grid_indices = []

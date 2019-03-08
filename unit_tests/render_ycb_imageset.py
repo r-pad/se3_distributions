@@ -25,7 +25,7 @@ def render(obj, results_prefix, image_set, benchmark_dir):
         base_renders = torch.load(os.path.join(base_render_folder, 'renders.pt'))
         base_vertices = torch.load(os.path.join(base_render_folder, 'vertices.pt'))
         
-        num_imgs = len(base_renders.shape[0])
+        num_imgs = base_renders.shape[0]
         digits = len(str(num_imgs))
         pbar = tqdm(range(num_imgs))
         for j in pbar:

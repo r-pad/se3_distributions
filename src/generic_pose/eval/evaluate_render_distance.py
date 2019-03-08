@@ -63,11 +63,11 @@ def evaluateDistanceNetwork(estimator, data_loader, trans_mat=np.eye(4),
     top_pos_images = []
     top_neg_images = []
 
-    for j, (imgs, _, quats, _, _) in enumerate(data_loader):
-        diff = estimator.estimate(imgs[0], preprocess=False) 
+    for j, (imgs, quats, _, _) in enumerate(data_loader):
+        diff = estimator.estimate(imgs, preprocess=False) 
         diff = to_np(diff.detach())
         num_verts = diff.shape[0]
-        true_dist = trueDiff(to_np(quats[0][0]))
+        true_dist = trueDiff(to_np(quats[0]))
         top_idx = np.argmin(sign*diff)
         true_idx = np.argmin(true_dist)
 
@@ -85,26 +85,27 @@ def evaluateDistanceNetwork(estimator, data_loader, trans_mat=np.eye(4),
         #print('True ranking: {}'.format(np.nonzero(np.argsort(-diff) == true_idx)[0][0]))
         #print('Top scored ranking: {}'.format(np.nonzero(np.argsort(true_dist) == top_idx)[0][0]))   
         #print('Top distance: {}'.format(true_dist[top_idx]*180/np.pi))
-        if(rank_gt < num_verts*0.05):
-            top_img = unprocessImages(estimator.base_renders[top_idx:top_idx+1])[0]
-            tgt_img = unprocessImages(imgs[0])[0]
-            gt_img  = unprocessImages(estimator.base_renders[true_idx:true_idx+1])[0]
-            gt_pos_images = [top_img, tgt_img, gt_img, j]
-        elif(rank_gt > num_verts*0.95):
-            top_img = unprocessImages(estimator.base_renders[top_idx:top_idx+1])[0]
-            tgt_img = unprocessImages(imgs[0])[0]
-            gt_img  = unprocessImages(estimator.base_renders[true_idx:true_idx+1])[0]
-            gt_neg_images = [top_img, tgt_img, gt_img, j]
-        elif(rank_top < num_verts*0.05):
-            top_img = unprocessImages(estimator.base_renders[top_idx:top_idx+1])[0]
-            tgt_img = unprocessImages(imgs[0])[0]
-            gt_img  = unprocessImages(estimator.base_renders[true_idx:true_idx+1])[0]
-            top_pos_images = [top_img, tgt_img, gt_img, j]
-        elif(rank_top > num_verts*0.95):
-            top_img = unprocessImages(estimator.base_renders[top_idx:top_idx+1])[0]
-            tgt_img = unprocessImages(imgs[0])[0]
-            gt_img  = unprocessImages(estimator.base_renders[true_idx:true_idx+1])[0]
-            top_neg_images = [top_img, tgt_img, gt_img, j]
+        if(False):
+            if(rank_gt < num_verts*0.05):
+                top_img = unprocessImages(estimator.base_renders[top_idx:top_idx+1])[0]
+                tgt_img = unprocessImages(imgs[0])[0]
+                gt_img  = unprocessImages(estimator.base_renders[true_idx:true_idx+1])[0]
+                gt_pos_images = [top_img, tgt_img, gt_img, j]
+            elif(rank_gt > num_verts*0.95):
+                top_img = unprocessImages(estimator.base_renders[top_idx:top_idx+1])[0]
+                tgt_img = unprocessImages(imgs[0])[0]
+                gt_img  = unprocessImages(estimator.base_renders[true_idx:true_idx+1])[0]
+                gt_neg_images = [top_img, tgt_img, gt_img, j]
+            elif(rank_top < num_verts*0.05):
+                top_img = unprocessImages(estimator.base_renders[top_idx:top_idx+1])[0]
+                tgt_img = unprocessImages(imgs[0])[0]
+                gt_img  = unprocessImages(estimator.base_renders[true_idx:true_idx+1])[0]
+                top_pos_images = [top_img, tgt_img, gt_img, j]
+            elif(rank_top > num_verts*0.95):
+                top_img = unprocessImages(estimator.base_renders[top_idx:top_idx+1])[0]
+                tgt_img = unprocessImages(imgs[0])[0]
+                gt_img  = unprocessImages(estimator.base_renders[true_idx:true_idx+1])[0]
+                top_neg_images = [top_img, tgt_img, gt_img, j]
 
         #input("Press Enter to continue...")
         #import IPython; IPython.embed()
@@ -178,7 +179,7 @@ def main(weight_file,
     import cv2
     import torch
     from torch.utils.data import DataLoader
-    from generic_pose.models.pose_networks import gen_pose_net
+    from generic_pose.models.pose_networks import gen_pose_net, load_state_dict
     
     print(results_prefix)
     t = time.time()
@@ -187,7 +188,7 @@ def main(weight_file,
                             output_dim = 1,
                             pretrained = False)
 
-    dist_net.load_state_dict(torch.load(weight_file))
+    load_state_dict(dist_net, weight_file)
     #print('Weights load time: {}s'.format(round(time.time()-t, 2)))
 
     if(dataset_type.lower() == 'numpy'):
@@ -212,7 +213,7 @@ def main(weight_file,
                              batch_size=1, 
                              shuffle=True)
 
-    data_loader.dataset.loop_truth = [1]
+    data_loader.dataset.loop_truth =None # [1]
     #print('Dataset initialization time: {}s'.format(round(time.time()-t, 2)))
 
     if('cam/mesh.ply' in model_filename or 

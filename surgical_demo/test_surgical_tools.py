@@ -17,108 +17,99 @@ import os
 import time
 import numpy as np
 
-from generic_pose.datasets.ycb_dataset import YCBDataset, ycbRenderTransform
-from generic_pose.training.finetune_distance_utils import evaluateRenderedDistance
+from generic_pose.eval.pose_grid_estimator import PoseGridEstimator
 from generic_pose.models.pose_networks import gen_pose_net, load_state_dict
-from generic_pose.losses.distance_utils import evaluateDataset 
-from generic_pose.utils.image_preprocessing import unprocessImages
-from generic_pose.eval.plot_accuracy import plotAccuracy
+from generic_pose.utils.image_preprocessing import preprocessImages, unprocessImages
+
 import resource
 rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
 resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))    
-
     
-class RenderPoseEstimator(object):
+class MultiObjectPoseEstimator(object):
     def __init__(self, weight_paths, render_paths):
-        self.models = []
-        base_vertices = torch.load(os.path.join(base_render_folder, 'vertices.pt'))
-        for weight_file in weight_paths:
+        self.pose_estimators = []
+
+        for weight_file, render_folder in zip(weight_paths, render_paths):
             model = gen_pose_net('alexnet','sigmoid', output_dim = 1, 
                                  pretrained = True, siamese_features = False)
-            load_state_dict(model, weight_file)    
+            load_state_dict(model, weight_file)
             model.eval()
             model.cuda()
-            self.models.append(model)
-            self.base_renders.apend(torch.load(os.path.join(base_render_folder, 'renders.pt')))
- 
-
-  
-def evaluate(obj, weights_dir, render_dir):
-
-    dataset.loop_truth = None
-    dataset.resample_on_none = False 
-    loader = DataLoader(dataset, num_workers=4, batch_size=16, shuffle=False, pin_memory=True)
-    base_render_folder = os.path.join(benchmark_dir,
-                                      'base_renders',
-                                      dataset.getObjectName(),
-                                      '{}'.format(2))
-    base_renders = torch.load(os.path.join(base_render_folder, 'renders.pt'))
-    base_vertices = torch.load(os.path.join(base_render_folder, 'vertices.pt'))
-  
-  
-    model = gen_pose_net('alexnet','sigmoid', output_dim = 1, pretrained = True, siamese_features = False)
-    files = glob.glob(weights_dir + '**/checkpoint_*.pth', recursive=True)
-
-    max_step = 0
-    weight_file = ''
-    for fn in files:
-        step = int(fn.split('_')[-1][:-4])
-        if(step >= max_step):
-            max_step = step
-            weight_file = fn
-
-    assert weight_file != ''
-
-    load_state_dict(model, weight_file)
-    model.eval()
-    model.cuda()
-    optimizer = None #Adam(model.parameters(), lr=1e-5)
-  
-    metrics = evaluateDataset(model, loader, base_vertices, base_renders, 
-            save_output = save_output) 
-    plotAccuracy(metrics, results_prefix)
+            self.pose_estimators.append(PoseGridEstimator(render_folder, model))
     
-    np.savez(results_prefix + 'metrics.npz', **metrics)
-    sorted_indice = np.argsort(metrics['rank_gt'])
-    best_file = open(results_prefix + 'best.txt', 'w')
-    worst_file = open(results_prefix + 'worst.txt', 'w')
-    for j in range(1):
-        b_j = sorted_indice[j]
-        w_j = sorted_indice[-(j+1)]
-        best_file.write(dataset.data_filenames[b_j] + '\n')
-        worst_file.write(dataset.data_filenames[w_j] + '\n')
-        cv2.imwrite(results_prefix + 'worst_{:03d}_{}.png'.format(j, metrics['rank_gt'][w_j]), 
-                    dataset.getImage(w_j, preprocess = False)[0])
-        cv2.imwrite(results_prefix + 'worst_{:03d}_{}_p.png'.format(j, metrics['output_gt'][w_j]), 
-                    unprocessImages(dataset.__getitem__(w_j)[0].unsqueeze(0))[0])
-        cv2.imwrite(results_prefix + 'worst_{:03d}_{}_r.png'.format(j, metrics['top_idx'][w_j]), 
-                    unprocessImages(base_renders[metrics['top_idx'][w_j]].unsqueeze(0))[0])
+    def __call__(self, img, class_idx):
+        poses, mode_idxs = self.pose_estimators[class_idx].getPose(img)
+        renders = self.pose_estimators[class_idx].grid_renders[mode_idxs]
+        return poses, renders
 
-        cv2.imwrite(results_prefix + 'best_{:03d}_{}.png'.format(j, metrics['rank_gt'][b_j]), 
-                    dataset.getImage(b_j, preprocess = False)[0])
-        cv2.imwrite(results_prefix + 'best_{:03d}_{}_p.png'.format(j, metrics['output_gt'][b_j]), 
-                    unprocessImages(dataset.__getitem__(b_j)[0].unsqueeze(0))[0])
+def evaluate(image_dir, results_dir, class_names, weights_dir, renders_dir, image_ext = 'jpg'):
+    pose_estimator = MultiObjectPoseEstimator(weights_dir, renders_dir)
+    image_filenames = glob.glob(image_dir + '**/*.' + image_ext, recursive = True) 
+    
+    for cat_name in class_names.keys():
+        if not os.path.exists(os.path.join(results_dir, cat_name)):
+            os.makedirs(os.path.join(results_dir, cat_name))
+    
+    for fn in image_filenames:
+        base_name = os.path.splitext(os.path.basename(fn))[0]
+        img_class_name = fn.split('/')[-2]
+        img_class_idx = class_names[img_class_name]
+        img = cv2.imread(fn, cv2.IMREAD_UNCHANGED)
+        #boarder = max(img.shape[:2])//2
+        #img = np.pad(img,((boarder, boarder),(boarder, boarder),(0,0)), 
+        #        mode = 'constant', constant_values=0)
+        poses, renders = pose_estimator(img, img_class_idx) 
 
-    best_file.close()
-    worst_file.close()
+        cv2.imwrite(os.path.join(results_dir, img_class_name, base_name + '.{}'.format(image_ext)), img)
+        img = preprocessImages([img], (224,224),
+                               normalize_tensors = True,
+                               background = None,
+                               background_filenames = None, 
+                               remove_mask = True, 
+                               vgg_normalize = False)
+        cv2.imwrite(os.path.join(results_dir, img_class_name, base_name+'_prep.{}'.format(image_ext)), 
+                    unprocessImages(img)[0])
+        cv2.imwrite(os.path.join(results_dir, img_class_name, base_name+'_rend.{}'.format(image_ext)), 
+                    unprocessImages(renders.unsqueeze(0))[0])
     return 
 
 if __name__=='__main__':
     from argparse import ArgumentParser
     parser = ArgumentParser()
-    parser.add_argument('obj', type=int) 
-    parser.add_argument('--results_prefix', type=str, default=None)
-    parser.add_argument('--weights_dir', type=str, default=None)
-    parser.add_argument('--image_set', type=str, default='valid_split')
-    parser.add_argument('--benchmark_dir', type=str, 
-        default='/scratch/bokorn/data/benchmarks/ycb/YCB_Video_Dataset/')
-    parser.add_argument('--save_output', dest='save_output', action='store_true')
+
+    parser.add_argument('--image_dir', type=str, default = '/home/bokorn/data/surgical_tools/images/')
+    parser.add_argument('--class_names', type=str, nargs='+', default = ['hemostat','scalpel','scissors'])
+    parser.add_argument('--results_dir', type=str, default = '/home/bokorn/results/sugical/test/')
+    parser.add_argument('--weights_dir', type=str, nargs='+', 
+        default = ['/scratch/bokorn/results/sugical/hemostat_black_jitter/2019-03-07_02-03-40/weights/checkpoint_200000.pth',
+                   '/scratch/bokorn/results/sugical/scalpel_gray_jitter/2019-03-07_02-03-43/weights/checkpoint_200000.pth',
+                   '/scratch/bokorn/results/sugical/scissor_metal_jitter/2019-03-07_02-03-48/weights/checkpoint_200000.pth'])
+    parser.add_argument('--renders_dir', type=str, nargs='+', 
+        default = ['/scratch/bokorn/data/demo/surgical/hemostat_black/base_renders/2/',
+                   '/scratch/bokorn/data/demo/surgical/scalpel_gray/base_renders/2/',
+                   '/scratch/bokorn/data/demo/surgical/scissor_metal/base_renders/2/'])
+#    parser.add_argument('--results_dir', type=str, default = '/home/bokorn/results/sugical_far/test/')
+#    parser.add_argument('--weights_dir', type=str, nargs='+', 
+#        default = ['/home/bokorn/pretrained/surgical/hemostat_black_jitter/2019-02-21_06-58-49/weights/checkpoint_200000.pth',
+#                   '/home/bokorn/pretrained/surgical/scalpel_gray_jitter/2019-02-21_06-58-36/weights/checkpoint_200000.pth',
+#                   '/home/bokorn/pretrained/surgical/scissor_metal_jitter/2019-02-21_06-58-40/weights/checkpoint_200000.pth'])
+#    parser.add_argument('--renders_dir', type=str, nargs='+', 
+#        default = ['/scratch/bokorn/data/demo/surgical_far/hemostat_black/base_renders/2/',
+#                   '/scratch/bokorn/data/demo/surgical_far/scalpel_gray/base_renders/2/',
+#                   '/scratch/bokorn/data/demo/surgical_far/scissor_metal/base_renders/2/'])
+
+
+    parser.add_argument('--image_ext', type=str, default = 'png')
     args = parser.parse_args()
-    
-    if(args.weights_dir is None):
-        args.weights_dir = '/scratch/bokorn/results/ycb_finetune/full_train/model_{}/'.format(args.obj)
-    if(args.results_prefix is None):
-        args.results_prefix = '/home/bokorn/results/ycb_finetune/model_{}/{}_'.format(args.obj, args.image_set)
-    
-    evaluate(args.obj, args.weights_dir, args.results_prefix, args.image_set, args.benchmark_dir, args.save_output)
+     
+    class_names = {}
+    for j, cls in enumerate(args.class_names):
+        class_names[cls] = j
+
+    evaluate(image_dir = args.image_dir, 
+             results_dir = args.results_dir,
+             class_names = class_names, 
+             weights_dir = args.weights_dir, 
+             renders_dir = args.renders_dir, 
+             image_ext = args.image_ext)
 

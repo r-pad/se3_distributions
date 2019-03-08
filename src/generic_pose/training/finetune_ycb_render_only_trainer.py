@@ -25,7 +25,7 @@ from logger import Logger
 from generic_pose.bbTrans.discretized4dSphere import S3Grid
 #from generic_pose.datasets.concat_dataset import ConcatDataset
 from generic_pose.datasets.tensor_dataset import TensorDataset
-from generic_pose.datasets.ycb_dataset import YCBDataset, ycbRenderTransform, getYCBSymmeties
+from generic_pose.datasets.ycb_dataset import YCBDataset, ycbRenderTransform
 from generic_pose.utils import to_np, to_var
 from generic_pose.training.finetune_distance_utils import evaluateRenderedDistance
 from generic_pose.utils.image_preprocessing import preprocessImages
@@ -69,29 +69,15 @@ class FinetuneYCBTrainer(object):
         self.img_size = img_size
         self.falloff_angle = falloff_angle
         self.use_exact_render = use_exact_render
-        self.axes_of_sym, self.angles_of_sym = getYCBSymmeties(target_object) 
-        self.ycb_dataset = YCBDataset(data_dir=benchmark_folder, 
-                                        image_set='train',
-                                        img_size=img_size,
-                                        obj=target_object,
-                                        use_syn_data=True,
-                                        brightness_jitter = brightness_jitter,
-                                        contrast_jitter = contrast_jitter,
-                                        saturation_jitter = saturation_jitter,
-                                        hue_jitter = hue_jitter,
-                                        max_translation = max_translation,
-                                        max_scale = max_scale,
-                                        rotate_image = rotate_image,
-                                        max_num_occlusions = max_num_occlusions,
-                                        max_occlusion_area = max_occlusion_area,
-                                        augmentation_prob = augmentation_prob)
 
-        self.ycb_dataset.loop_truth = None
-        self.ycb_dataset.append_rendered = use_exact_render
-        print("YCB Data Loaded")
+        self.valid_dataset = YCBDataset(data_dir=benchmark_folder, 
+                                        image_set='valid_split',
+                                        img_size=img_size,
+                                        obj=target_object) 
+        self.valid_dataset.loop_truth = None
         
-        self.rendered_dataset = TensorDataset(renders_folder,
-                                              self.ycb_dataset.getModelFilename(),
+        self.train_dataset = TensorDataset(renders_folder,
+                                              self.valid_dataset.getModelFilename(),
                                               img_size=img_size,
                                               offset_quat = render_offset,
                                               base_level = base_level,
@@ -106,32 +92,16 @@ class FinetuneYCBTrainer(object):
                                         max_occlusion_area = max_occlusion_area,
                                         augmentation_prob = augmentation_prob)
 
-        self.rendered_dataset.loop_truth = None
-        self.rendered_dataset.append_rendered = use_exact_render
+        self.train_dataset.loop_truth = None
+        self.train_dataset.append_rendered = use_exact_render
         print("Renders Loaded")
-        if(render_proportion is None):
-            render_multi = 1
-            ycb_multi = 1
-        else:
-            ycb_multi = 1
-            render_multi = int(max(1,
-                np.ceil(render_proportion * len(self.ycb_dataset)/len(self.rendered_dataset))))
-            print('YCB Size: {}'.format(len(self.ycb_dataset)))
-            print('YCB Mulit: {}'.format(ycb_multi))
-            print('Render Size: {}'.format(len(self.rendered_dataset)))
-            print('Render Mulit: {}'.format(render_multi))
-        self.train_dataset = ConcatDataset((self.ycb_dataset,)*ycb_multi + (self.rendered_dataset,)*render_multi)
         self.train_loader = DataLoader(self.train_dataset,
                                      num_workers=num_workers-1, 
                                      batch_size=batch_size, 
                                      shuffle=True)
 
         
-        self.valid_dataset = YCBDataset(data_dir=benchmark_folder, 
-                                        image_set='valid_split',
-                                        img_size=img_size,
-                                        obj=target_object)
-        self.valid_dataset.loop_truth = None
+
         #self.valid_dataset.append_rendered = use_exact_render
         
         self.valid_loader = DataLoader(self.valid_dataset,
@@ -140,19 +110,19 @@ class FinetuneYCBTrainer(object):
                                        shuffle=True)
  
          
-        self.grid = S3Grid(base_level)
-        self.renderer = BpyRenderer(transform_func = ycbRenderTransform)
-        self.renderer.loadModel(self.ycb_dataset.getModelFilename(),
-                                emit = 0.5)
-        self.renderPoses = self.renderer.renderPose
         base_render_folder = os.path.join(benchmark_folder,
                                           'base_renders',
-                                          self.ycb_dataset.getObjectName(),
+                                          self.valid_dataset.getObjectName(),
                                           '{}'.format(base_level))
         if(os.path.exists(os.path.join(base_render_folder, 'renders.pt'))):
             self.base_renders = torch.load(os.path.join(base_render_folder, 'renders.pt'))
             self.base_vertices = torch.load(os.path.join(base_render_folder, 'vertices.pt'))
         else:
+            self.grid = S3Grid(base_level)
+            self.renderer = BpyRenderer(transform_func = ycbRenderTransform)
+            self.renderer.loadModel(self.valid_dataset.getModelFilename(),
+                                    emit = 0.5)
+            self.renderPoses = self.renderer.renderPose
             self.base_vertices = np.unique(self.grid.vertices, axis = 0)
             self.base_renders = preprocessImages(self.renderPoses(self.base_vertices, camera_dist = 0.33),
                                                  img_size = self.img_size,
@@ -250,10 +220,7 @@ class FinetuneYCBTrainer(object):
                                                              per_instance = per_instance,
                                                              sample_by_loss = sample_by_loss,
                                                              top_n = top_n,
-                                                             sampling_distribution = sampling_distribution,
-                                                             axes_of_sym = self.axes_of_sym, 
-                                                             angles_of_sym = self.angles_of_sym,
-                                                             )
+                                                             sampling_distribution = sampling_distribution)
 
                     #print(len(gc.get_objects()))
                     #print(sum(sys.getsizeof(i) for i in gc.get_objects()))
@@ -299,10 +266,7 @@ class FinetuneYCBTrainer(object):
                                                                  optimizer = None, 
                                                                  calc_metrics = True,
                                                                  num_indices = num_indices,
-                                                                 image_chunk_size = image_chunk_size,
-                                                                 axes_of_sym = self.axes_of_sym, 
-                                                                 angles_of_sym = self.angles_of_sym,
-                                                                 )
+                                                                 image_chunk_size = image_chunk_size)
 
                         torch.cuda.empty_cache()
                         valid_info = {}
@@ -515,8 +479,8 @@ if __name__=='__main__':
                        message_subject='Job Completed on {}'.format(hostname))
 
     except:
-        e = sys.exc_info()
+        e = sys.exc_info()[0]
         sca.sendAlert('bokorn@andrew.cmu.edu', 
                 message_subject='Job Failed on {}'.format(hostname),
-                message_text=str(e))
+                message_text=e)
         raise
