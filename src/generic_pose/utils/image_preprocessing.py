@@ -10,7 +10,26 @@ import torch
 import torchvision.transforms as transforms
 from generic_pose.utils import to_np
 
-#norm_mean = np.array([0.485, 0.456, 0.406])
+def cropBBox(img, bbox, boarder_width = 10):
+    rows, cols = img.shape[:2]
+    x,y,w,h = bbox
+    y0 = min(max(y - boarder_width, 0), rows)
+    x0 = min(max(x - boarder_width, 0), cols)
+    y1 = min(max(y + h + boarder_width, 0), rows)
+    x1 = min(max(x + w + boarder_width, 0), cols)
+    img_crop = img[y0:y1,x0:x1]
+
+    return img_crop, (x0, y0)
+
+def seg2Mask(segmentation, img_size):
+    mask = np.zeros(img_size[:2] + (1,), dtype=np.uint8)
+    polys = []
+    for seg in segmentation:
+        polys.append(np.reshape(seg,(-1,2)))
+    cv2.fillPoly(mask, polys, (1))
+    return mask
+
+norm_mean = np.array([0.485, 0.456, 0.406])
 #norm_std = np.array([0.229, 0.224, 0.225])
 
 #normalize = transforms.Normalize(mean=norm_mean, std=norm_std)

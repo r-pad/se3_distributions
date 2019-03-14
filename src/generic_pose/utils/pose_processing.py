@@ -21,6 +21,9 @@ def tensorAngularAllDiffs(label_qs, verts):
     return 2 * torch.acos(torch.abs(torch.transpose(torch.mm(verts, 
         torch.transpose(label_qs,0,1)),0,1)).clamp(max=1-eps))
 
+def tensorSignedAngularDiff(q1, q2):
+    return 2 * torch.acos(torch.mm(q1,q2.t()).clamp(min=eps-1, max=1-eps))
+
 def tensorAngularDiff(q1, q2):
     return 2 * torch.acos(torch.abs((q1*q2).sum(1)).clamp(max=1-eps))
 
@@ -29,7 +32,27 @@ def getGaussianKernal(verts, sigma=np.pi/36):
     kernal = (kernal/kernal.sum(1)).transpose(0,1)
     return kernal
 
+def getSignedGaussianKernal(pts, verts, sigma=np.sqrt(2)*np.pi/4):
+    d_pos = tensorSignedAngularDiff(pts, verts)
+    d_neg = tensorSignedAngularDiff(pts, -verts)
+    d = torch.min(d_pos, d_neg)
+    sign = 1-2*(d_neg < d_pos).float()
+    kernal = sign * torch.exp(-d**2/sigma**2)
+    return kernal
 
+def meanShiftStep(pts, verts, weights, sigma=np.sqrt(2)*np.pi/4):
+    K = weights.t() * getSignedGaussianKernal(pts, verts, sigma)
+    new_pts = torch.mm(K, verts)
+    new_pts /= torch.norm(new_pts,dim=1).unsqueeze(1)
+    return new_pts
+
+def meanShift(pts, verts, weights, sigma=np.sqrt(2)*np.pi/4, eps_term = 1e-5, max_iter = 100):
+    for _ in range(max_iter):
+        new_pts = meanShiftStep(pts, verts, weights, sigma)
+        if(torch.max(torch.abs(pts-new_pts)) < eps_term):
+            break;
+    return new_pts
+            
 def pose2Viewpoint(q):
     delta_quat = np.array([-.5,-.5,-.5,.5])    
     q_flip = quaternion_multiply(delta_quat, q.copy())

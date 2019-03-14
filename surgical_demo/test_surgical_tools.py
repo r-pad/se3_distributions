@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python
 """
 Created on Thu Jan  4 00:27:44 2018
 
@@ -16,9 +16,11 @@ import cv2
 import os
 import time
 import numpy as np
+import scipy.io as sio
 
 from generic_pose.eval.pose_grid_estimator import PoseGridEstimator
 from generic_pose.models.pose_networks import gen_pose_net, load_state_dict
+from generic_pose.utils import to_np
 from generic_pose.utils.image_preprocessing import preprocessImages, unprocessImages
 
 import resource
@@ -34,14 +36,20 @@ class MultiObjectPoseEstimator(object):
                                  pretrained = True, siamese_features = False)
             load_state_dict(model, weight_file)
             model.eval()
-            model.cuda()
+            if torch.cuda.is_available():
+                model.cuda()
             self.pose_estimators.append(PoseGridEstimator(render_folder, model))
-    
+
     def __call__(self, img, class_idx):
         poses, mode_idxs = self.pose_estimators[class_idx].getPose(img)
         renders = self.pose_estimators[class_idx].grid_renders[mode_idxs]
         return poses, renders
 
+    def getDistances(self, img, class_idx):
+        dists = self.pose_estimators[class_idx].getDistances(img)
+        return dists
+
+ 
 def evaluate(image_dir, results_dir, class_names, weights_dir, renders_dir, image_ext = 'jpg'):
     pose_estimator = MultiObjectPoseEstimator(weights_dir, renders_dir)
     image_filenames = glob.glob(image_dir + '**/*.' + image_ext, recursive = True) 
@@ -58,18 +66,21 @@ def evaluate(image_dir, results_dir, class_names, weights_dir, renders_dir, imag
         #boarder = max(img.shape[:2])//2
         #img = np.pad(img,((boarder, boarder),(boarder, boarder),(0,0)), 
         #        mode = 'constant', constant_values=0)
+        dists = pose_estimator.getDistances(img, img_class_idx) 
         poses, renders = pose_estimator(img, img_class_idx) 
-
-        cv2.imwrite(os.path.join(results_dir, img_class_name, base_name + '.{}'.format(image_ext)), img)
+        output_prefix = os.path.join(results_dir, img_class_name, base_name)
+        sio.savemat(output_prefix + '.mat', {'outputs':to_np(dists), 'quat_gt':poses,
+                'verts':pose_estimator.pose_estimators[img_class_idx].grid_vertices}) 
+        cv2.imwrite(output_prefix + '.{}'.format(image_ext), img)
         img = preprocessImages([img], (224,224),
                                normalize_tensors = True,
                                background = None,
                                background_filenames = None, 
                                remove_mask = True, 
                                vgg_normalize = False)
-        cv2.imwrite(os.path.join(results_dir, img_class_name, base_name+'_prep.{}'.format(image_ext)), 
+        cv2.imwrite(output_prefix + '_prep.{}'.format(image_ext), 
                     unprocessImages(img)[0])
-        cv2.imwrite(os.path.join(results_dir, img_class_name, base_name+'_rend.{}'.format(image_ext)), 
+        cv2.imwrite(output_prefix + '_rend.{}'.format(image_ext), 
                     unprocessImages(renders.unsqueeze(0))[0])
     return 
 
@@ -77,27 +88,18 @@ if __name__=='__main__':
     from argparse import ArgumentParser
     parser = ArgumentParser()
 
-    parser.add_argument('--image_dir', type=str, default = '/home/bokorn/data/surgical_tools/images/')
+    parser.add_argument('--image_dir', type=str, default = '/home/bokorn/data/surgical/images/coco/masked_images/')
     parser.add_argument('--class_names', type=str, nargs='+', default = ['hemostat','scalpel','scissors'])
-    parser.add_argument('--results_dir', type=str, default = '/home/bokorn/results/sugical/test/')
+    parser.add_argument('--results_dir', type=str, default = '/home/bokorn/data/surgical/results/')
     parser.add_argument('--weights_dir', type=str, nargs='+', 
-        default = ['/scratch/bokorn/results/sugical/hemostat_black_jitter/2019-03-07_02-03-40/weights/checkpoint_200000.pth',
-                   '/scratch/bokorn/results/sugical/scalpel_gray_jitter/2019-03-07_02-03-43/weights/checkpoint_200000.pth',
-                   '/scratch/bokorn/results/sugical/scissor_metal_jitter/2019-03-07_02-03-48/weights/checkpoint_200000.pth'])
+        default = ['/home/bokorn/data/surgical/weights/hemostat_black/weights.pth',
+                   '/home/bokorn/data/surgical/weights/scalpel_gray/weights.pth', 
+                   '/home/bokorn/data/surgical/weights/scissor_metal/weights.pth',])
+    
     parser.add_argument('--renders_dir', type=str, nargs='+', 
-        default = ['/scratch/bokorn/data/demo/surgical/hemostat_black/base_renders/2/',
-                   '/scratch/bokorn/data/demo/surgical/scalpel_gray/base_renders/2/',
-                   '/scratch/bokorn/data/demo/surgical/scissor_metal/base_renders/2/'])
-#    parser.add_argument('--results_dir', type=str, default = '/home/bokorn/results/sugical_far/test/')
-#    parser.add_argument('--weights_dir', type=str, nargs='+', 
-#        default = ['/home/bokorn/pretrained/surgical/hemostat_black_jitter/2019-02-21_06-58-49/weights/checkpoint_200000.pth',
-#                   '/home/bokorn/pretrained/surgical/scalpel_gray_jitter/2019-02-21_06-58-36/weights/checkpoint_200000.pth',
-#                   '/home/bokorn/pretrained/surgical/scissor_metal_jitter/2019-02-21_06-58-40/weights/checkpoint_200000.pth'])
-#    parser.add_argument('--renders_dir', type=str, nargs='+', 
-#        default = ['/scratch/bokorn/data/demo/surgical_far/hemostat_black/base_renders/2/',
-#                   '/scratch/bokorn/data/demo/surgical_far/scalpel_gray/base_renders/2/',
-#                   '/scratch/bokorn/data/demo/surgical_far/scissor_metal/base_renders/2/'])
-
+        default = ['/home/bokorn/data/surgical/weights/hemostat_black/',
+                   '/home/bokorn/data/surgical/weights/scalpel_gray/', 
+                   '/home/bokorn/data/surgical/weights/scissor_metal/',])
 
     parser.add_argument('--image_ext', type=str, default = 'png')
     args = parser.parse_args()

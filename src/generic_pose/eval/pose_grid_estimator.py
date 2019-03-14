@@ -13,7 +13,7 @@ from generic_pose.utils.image_preprocessing import preprocessImages
 from generic_pose.utils import to_var, to_np
 
 from generic_pose.losses.distance_utils import getFeatures
-from generic_pose.utils.pose_processing import getGaussianKernal
+from generic_pose.utils.pose_processing import getGaussianKernal, meanShift, tensorAngularAllDiffs
 
 #from generic_pose.bbTrans.discretized4dSphere import S3Grid
 
@@ -27,20 +27,18 @@ class PoseGridEstimator(object):
     def __init__(self, render_dir, distance_network, 
                  image_chunk_size = 500, 
                  kernal_sigma = None,
-                 dist_sign = 1, 
                  mode_selection = None,
                  num_modes = 1):
 
-        self.mode_selection = mode_selection if mode_selection else self.MODE_MAX
+        self.mode_selection = mode_selection if mode_selection else self.MODE_MEANSHIFT
         self.num_modes = num_modes
 
         self.dist_estimator = distance_network
         self.dist_estimator.eval()
-        self.dist_sign = 1
         assert os.path.exists(os.path.join(render_dir, 'renders.pt')), \
             'Render Dir {} does not contain renders.pt'.format(render_dir)
         
-        self.grid_vertices = torch.load(os.path.join(render_dir, 'vertices.pt'))
+        self.grid_vertices = torch.tensor(torch.load(os.path.join(render_dir, 'vertices.pt'))).float()
         self.grid_renders = torch.load(os.path.join(render_dir, 'renders.pt'))
         
         with torch.no_grad():
@@ -59,7 +57,9 @@ class PoseGridEstimator(object):
                                    background = None,
                                    background_filenames = None, 
                                    remove_mask = True, 
-                                   vgg_normalize = False).cuda()
+                                   vgg_normalize = False)
+        if torch.cuda.is_available():
+            img.cuda()
 
         query_features = self.dist_estimator.queryFeatures(img).repeat(self.grid_size,1)
         dist_est = self.dist_estimator.compare_network(self.grid_features,query_features)
@@ -73,17 +73,23 @@ class PoseGridEstimator(object):
         num_modes = num_modes if num_modes else self.num_modes 
 
         assert num_modes > 0, 'Must have atleaset one mode: {} < 1'.format(num_modes)
-        if(mode_selection == self.MODE_MAX):
+        if(mode_selection in (self.MODE_MAX, self.MODE_MEANSHIFT)):
             if(num_modes == 1):
                 mode_idxs = torch.argmax(dists)
             else:
                 mode_idxs = torch.argsort(dists, descending=True)[:num_modes]
-        elif(mode_selection == self.MODE_MEANSHIFT):
-            raise NotImplemented()
+            
+            quats = self.grid_vertices[mode_idxs]
+            if(len(quats.shape) == 1):
+                quats = quats.unsqueeze(0)
+            
+            if(mode_selection == self.MODE_MEANSHIFT):
+                quats = meanShift(quats, self.grid_vertices, dists)
+                mode_idxs = torch.argmin(tensorAngularAllDiffs(quats, self.grid_vertices), dim=1) 
+                  
         else:
             raise ValueError('Invalid Mode Selection ({}),'.format(mode_selection) \
                     + ' Valid values [max, meanshift]')
-        quats = self.grid_vertices[mode_idxs]
         return quats, mode_idxs
 
     def getPose(self, img, preprocess = True, 
