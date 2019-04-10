@@ -283,16 +283,20 @@ class S3Grid(object):
       http://www.ams.org/journals/mcom/1996-65-215/S0025-5718-96-00748-X/S0025-5718-96-00748-X.pdf
       '''
       n_vertices = self.vertices.shape[0]
-      n_tetra = self.tetra.shape[0]
+      tetra_start = self.tetra_levels[-2] 
+      tetra_size = self.tetra_levels[-1]
+      n_tetra = tetra_size - tetra_start
       #print(n_tetra, n_vertices)
       self.vertices.resize((n_vertices + n_tetra * 6, 4), refcheck=False)
-      self.tetra.resize((n_tetra * (8 + 1), 4))
-      self.tetra_levels.append(n_tetra * (8 + 1))
-      for i in range(n_tetra):
-          i0 = self.tetra[i, 0]
-          i1 = self.tetra[i, 1]
-          i2 = self.tetra[i, 2]
-          i3 = self.tetra[i, 3]
+    
+      self.tetra.resize((tetra_size + n_tetra * 8, 4))
+      self.tetra_levels.append(tetra_size + n_tetra * 8)
+
+      for i, tet_id in enumerate(range(tetra_start, tetra_size)):
+          i0 = self.tetra[tet_id, 0]
+          i1 = self.tetra[tet_id, 1]
+          i2 = self.tetra[tet_id, 2]
+          i3 = self.tetra[tet_id, 3]
           i01 = n_vertices + i*6 
           i12 = n_vertices + i*6 + 1
           i20 = n_vertices + i*6 + 2
@@ -305,14 +309,14 @@ class S3Grid(object):
           self.vertices[i03, :] = 0.5 * (self.vertices[i0, :] + self.vertices[i3, :]) 
           self.vertices[i13, :] = 0.5 * (self.vertices[i1, :] + self.vertices[i3, :]) 
           self.vertices[i23, :] = 0.5 * (self.vertices[i2, :] + self.vertices[i3, :]) 
-          self.tetra[n_tetra + i*8, :]     = [i0, i01, i20, i03]
-          self.tetra[n_tetra + i*8 + 1, :] = [i01, i1, i12, i13]
-          self.tetra[n_tetra + i*8 + 2, :] = [i12, i2, i20, i23]
-          self.tetra[n_tetra + i*8 + 3, :] = [i03, i13, i23, i3]
-          self.tetra[n_tetra + i*8 + 4, :] = [i01, i13, i03, i20]
-          self.tetra[n_tetra + i*8 + 5, :] = [i01, i12, i13, i20]
-          self.tetra[n_tetra + i*8 + 6, :] = [i23, i20, i12, i13]
-          self.tetra[n_tetra + i*8 + 7, :] = [i23, i03, i20, i13]
+          self.tetra[tetra_size + i*8, :]     = [i0, i01, i20, i03]
+          self.tetra[tetra_size + i*8 + 1, :] = [i01, i1, i12, i13]
+          self.tetra[tetra_size + i*8 + 2, :] = [i12, i2, i20, i23]
+          self.tetra[tetra_size + i*8 + 3, :] = [i03, i13, i23, i3]
+          self.tetra[tetra_size + i*8 + 4, :] = [i01, i13, i03, i20]
+          self.tetra[tetra_size + i*8 + 5, :] = [i01, i12, i13, i20]
+          self.tetra[tetra_size + i*8 + 6, :] = [i23, i20, i12, i13]
+          self.tetra[tetra_size + i*8 + 7, :] = [i23, i03, i20, i13]
       #print(np.sqrt((self.vertices[n_vertices::,:]**2).sum(axis=1)))
       self.vertices[n_vertices::, :] /= np.sqrt((self.vertices[n_vertices::,:]**2).sum(axis=1))[:, np.newaxis]
   def Simplify(self):

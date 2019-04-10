@@ -27,8 +27,10 @@ def tensorSignedAngularDiff(q1, q2):
 def tensorAngularDiff(q1, q2):
     return 2 * torch.acos(torch.abs((q1*q2).sum(1)).clamp(max=1-eps))
 
-def getGaussianKernal(verts, sigma=np.pi/36):
-    kernal = torch.exp(-tensorAngularAllDiffs(verts,verts)**2/sigma)
+def getGaussianKernal(v1, v2=None, sigma=np.pi/36):
+    if(v2 is None):
+        v2 = v1
+    kernal = torch.exp(-tensorAngularAllDiffs(v1,v2)**2/sigma)
     kernal = (kernal/kernal.sum(1)).transpose(0,1)
     return kernal
 
