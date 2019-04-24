@@ -4,6 +4,7 @@ Created on Some night, Way to late
 
 @author: bokorn
 """
+import os
 import torch
 import numpy as np
 from sklearn.neighbors import KDTree
@@ -15,6 +16,8 @@ from generic_pose.utils.pose_processing import getGaussianKernal
 from generic_pose.eval.multiscale_grid import MultiResGrid
 
 eps = 1e-12
+
+root_folder = os.path.dirname(os.path.abspath(__file__))
 
 def insideTetra(tetra, q):
     v0 = np.zeros(4)
@@ -116,7 +119,7 @@ class GaussianInterpolation(object):
         K = getGaussianKernal(q, self.vertices, sigma=self.sigma)
         return torch.mm(self.values.t(), K)
 
-bingham_normalization_data = sio.loadmat('bingham_normalization.mat')
+bingham_normalization_data = sio.loadmat(os.path.join(root_folder, 'bingham_normalization.mat'))
 bingham_normalization_eta = bingham_normalization_data['eta'][0]
 bingham_normalization_sigma = bingham_normalization_data['sigma'][0]
 binghamNormC = partial(np.interp, 
