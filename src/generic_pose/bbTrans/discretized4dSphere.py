@@ -27,7 +27,16 @@ class Tetrahedron(object):
     return np.min(dots), np.max(dots)
 
   def Volume(self):
+    A = np.zeros([5,5]);
+    A[1:,0] = 1;
+    for i in range(4):
+      for j in range(i+1,4):
+        A[i+1,j+1] = np.linalg.norm(self.vertices[i] - self.vertices[j])**2
+    A = A + A.T
+    return np.sqrt(np.linalg.det(A)/288.)
+    
     A = np.zeros((4,3))
+
     for i in range(3):
       A[:,i] = self.vertices[i] - self.vertices[3]
 #    print A
