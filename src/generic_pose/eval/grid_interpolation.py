@@ -116,7 +116,7 @@ class GaussianInterpolation(object):
         K = getGaussianKernal(q, self.vertices, sigma=self.sigma)
         return torch.mm(self.values.t(), K)
 
-bingham_normalization_data = sio.loadmat('../../matlab_math/bingham_normalization.mat')
+bingham_normalization_data = sio.loadmat('bingham_normalization.mat')
 bingham_normalization_eta = bingham_normalization_data['eta'][0]
 bingham_normalization_sigma = bingham_normalization_data['sigma'][0]
 binghamNormC = partial(np.interp, 
