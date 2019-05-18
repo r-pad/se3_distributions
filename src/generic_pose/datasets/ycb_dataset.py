@@ -13,6 +13,7 @@ import time
 import sys
 
 from generic_pose.datasets.image_dataset import PoseImageDataset
+from generic_pose.datasets.ycb_data_processing import preprocessPoseCNNMetaData
 from generic_pose.utils import SingularArray
 import generic_pose.utils.transformations as tf_trans
 from generic_pose.utils.pose_processing import viewpoint2Pose
@@ -278,11 +279,16 @@ class YCBDataset(PoseImageDataset):
     def getImage(self, index, boarder_ratio=0.25, preprocess = True):
         image_prefix = os.path.join(self.data_dir, 'data', self.data_filenames[index])
         img = cv2.imread(image_prefix + '-color.png')
-        if(self.use_posecnn_masks and os.path.exists(image_prefix + '-posecnn-seg.png')):
-            mask = 255*(cv2.imread(image_prefix + '-posecnn-seg.png')[:,:,:1] == self.obj).astype('uint8')
-        else:
-            mask = 255*(cv2.imread(image_prefix + '-label.png')[:,:,:1] == self.obj).astype('uint8')
-        if(np.sum(mask) == 0):
+        posecnn_meta = scio.loadmat('{}-posecnn.mat'.format(self.data_filenames[index]))
+
+        obj_idx = np.nonzero(posecnn_meta['rois'][:,1].astype(int) == self.obj)[0][0]
+        mask, bbox, object_label = preprocessPoseCNNMetaData(posecnn_meta, obj_idx)
+        rmin, rmax, cmin, cmax = bbox
+        #if(self.use_posecnn_masks and os.path.exists(image_prefix + '-posecnn-seg.png')):
+        #    mask = 255*(cv2.imread(image_prefix + '-posecnn-seg.png')[:,:,:1] == self.obj).astype('uint8')
+        #else:
+        #    mask = 255*(cv2.imread(image_prefix + '-label.png')[:,:,:1] == self.obj).astype('uint8')
+        if(np.sum(mask) < 9):
             #import IPython; IPython.embed()
             print('Index {} invalid for {} ({}:{})'.format(index, self.getObjectName(),
                     self.image_set, image_prefix))
@@ -291,6 +297,8 @@ class YCBDataset(PoseImageDataset):
         #if(preprocess):
         #    crop_img = self.preprocessImages(cropAndPad(img), normalize_tensor = True, augment_img = True)
         #else:
+        img = img[rmin:rmax, cmin:cmax, :]
+
         crop_img = cropAndPad(img)
         
         if(self.append_rendered):

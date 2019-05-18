@@ -40,13 +40,17 @@ class PoseGridEstimator(object):
         
         self.grid_vertices = torch.tensor(torch.load(os.path.join(render_dir, 'vertices.pt'))).float()
         self.grid_renders = torch.load(os.path.join(render_dir, 'renders.pt'))
-        
+        if torch.cuda.is_available():
+            self.grid_vertices = self.grid_vertices.cuda()
+            
         with torch.no_grad():
             self.grid_features = getFeatures(self.dist_estimator, to_var(self.grid_renders), image_chunk_size)
             self.grid_size = self.grid_features.shape[0]
         
         if(kernal_sigma is not None):
             self.kernal = getGaussianKernal(self.grid_vertices, kernal_sigma)
+            if torch.cuda.is_available():
+                self.kernal.cuda()
         else:
             self.kernal = None
 
@@ -57,9 +61,9 @@ class PoseGridEstimator(object):
                                    background = None,
                                    background_filenames = None, 
                                    remove_mask = True, 
-                                   vgg_normalize = False)
+                                   vgg_normalize = False).float()
         if torch.cuda.is_available():
-            img.cuda()
+            img = img.cuda()
 
         query_features = self.dist_estimator.queryFeatures(img).repeat(self.grid_size,1)
         dist_est = self.dist_estimator.compare_network(self.grid_features,query_features)

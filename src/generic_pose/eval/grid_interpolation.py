@@ -158,6 +158,9 @@ class BinghamInterpolation(object):
         M = torch.stack(Ms)
         Z = torch.diag(torch.Tensor([0,-sigma, -sigma, -sigma]))
         self.MZMt = torch.bmm(torch.bmm(M, Z.repeat([len(Ms),1,1])), torch.transpose(M,2,1))
+        if(torch.cuda.is_available()):
+            self.values = self.values.cuda()
+            self.MZMt = self.MZMt.cuda()
         self.eta = binghamNormC(sigma)
 
     def __call__(self, q):
