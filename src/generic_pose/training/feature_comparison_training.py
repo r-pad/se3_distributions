@@ -80,11 +80,11 @@ class FeatureComparisonTrainer(object):
     def train(self, model, 
               log_dir,
               checkpoint_dir,
-              num_epochs = 100000,
-              log_every_nth = 100,
-              checkpoint_every_nth = 10000,
-              lr = 1e-5,
-              optimizer = 'SGD',
+              num_epochs,
+              log_every_nth,
+              checkpoint_every_nth,
+              lr,
+              optimizer,
               ):
         
         model.train()
@@ -257,7 +257,8 @@ def main():
 
     args = parser.parse_args()
 
-    trainer = FeatureComparisonTrainer(dataset_root = args.dataset_folder,
+    trainer = FeatureComparisonTrainer(obj = args.object_index,
+                                       dataset_root = args.dataset_folder,
                                        feature_root = args.feature_folder,
                                        falloff_angle = args.falloff_angle*np.pi/180.0,
                                        batch_size = args.batch_size,
@@ -278,7 +279,6 @@ def main():
         model.load_state_dict(torch.load(args.weight_file))
 
     trainer.train(model,
-                  obj = args.object_index,
                   log_dir = log_dir,
                   checkpoint_dir = checkpoint_dir,
                   num_epochs = args.num_epochs,

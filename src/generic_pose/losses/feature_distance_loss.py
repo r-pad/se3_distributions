@@ -61,7 +61,7 @@ def evaluateLoss(model,
 
     return metrics  
 
-def multiObjectLoss(model, objs 
+def multiObjectLoss(model, objs, 
                  features, quats, 
                  grid_features,
                  grid_vertices,

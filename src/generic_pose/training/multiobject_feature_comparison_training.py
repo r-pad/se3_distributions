@@ -138,7 +138,7 @@ class FeatureComparisonTrainer(object):
                 grid_features = torch.cat(grid_features)
                 grid_vertices = torch.cat(grid_vertices)
             
-                train_results = multiObjectLoss(model, obj, 
+                train_results = multiObjectLoss(model, obj.cuda()-1, 
                                              to_var(feat), to_var(quat),
                                              to_var(grid_features), to_var(grid_vertices),
                                              falloff_angle = self.falloff_angle,
@@ -180,7 +180,7 @@ class FeatureComparisonTrainer(object):
                         grid_vertices.append(self.grid_vertices[idx])
                     grid_features = torch.cat(grid_features)
                     grid_vertices = torch.cat(grid_vertices)
-                    valid_results = multiObjectLoss(model, obj,
+                    valid_results = multiObjectLoss(model, obj.cuda()-1,
                                                  to_var(feat), to_var(quat),
                                                  to_var(grid_features), to_var(grid_vertices),
                                                  falloff_angle = self.falloff_angle,
