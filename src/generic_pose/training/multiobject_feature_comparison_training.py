@@ -22,7 +22,7 @@ from object_pose_utils.bbTrans.discretized4dSphere import S3Grid
 from object_pose_utils.utils import to_np, to_var
 
 from object_pose_utils.datasets.feature_dataset import UniformFeatureDataset, FeatureDataset
-from generic_pose.losses.feature_distance_loss import evaluateLoss
+from generic_pose.losses.feature_distance_loss import multiObjectLoss
 from logger import Logger
 
 import resource
@@ -31,7 +31,6 @@ resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))
 
 class FeatureComparisonTrainer(object):
     def __init__(self, 
-                 obj,
                  dataset_root,
                  feature_root,
                  falloff_angle = np.pi/4,
@@ -43,14 +42,15 @@ class FeatureComparisonTrainer(object):
         torch.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
 
-        self.obj = obj
         self.falloff_angle = falloff_angle
-        self.train_dataset = UniformFeatureDataset(dataset_root = dataset_root,
+        self.model_datasets = [UniformFeatureDataset(dataset_root = dataset_root,
                                                      feature_root = feature_root, 
                                                      mode = 'train_sym',
                                                      resample_on_error = True,
-                                                     object_label = obj)
+                                                     object_label = obj) for obj in range(1,22)]
         
+        self.train_dataset = ConcatDataset(self.model_datasets)
+
         self.train_loader = DataLoader(self.train_dataset,
                                        num_workers=num_workers-1,
                                        batch_size=batch_size, 
@@ -61,7 +61,7 @@ class FeatureComparisonTrainer(object):
                                             feature_root = feature_root,
                                             mode = 'valid',
                                             resample_on_error = True,
-                                            object_list = [obj])
+                                            object_list = list(range(1,22)))
         
         self.valid_loader = DataLoader(self.valid_dataset,
                                        num_workers=1, 
@@ -71,11 +71,11 @@ class FeatureComparisonTrainer(object):
         classes = self.valid_dataset.classes
         self.grid_vertices = {}
         self.grid_features = {}
-        #for obj in range(1,22):
-        self.grid_vertices[obj] = torch.load(os.path.join(feature_root, 'grid', 
-            '{}_vertices.pt'.format(classes[obj])))
-        self.grid_features[obj] = torch.load(os.path.join(feature_root, 'grid', 
-            '{}_features.pt'.format(classes[obj])))
+        for obj in range(1,22):
+            self.grid_vertices[obj] = torch.load(os.path.join(feature_root, 'grid', 
+                '{}_vertices.pt'.format(classes[obj])))
+            self.grid_features[obj] = torch.load(os.path.join(feature_root, 'grid', 
+                '{}_features.pt'.format(classes[obj])))
 
     def train(self, model, 
               log_dir,
@@ -101,16 +101,9 @@ class FeatureComparisonTrainer(object):
             
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
-        log_dir = os.path.join(log_dir, self.valid_dataset.classes[self.obj])
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-
         if not os.path.exists(checkpoint_dir):
             os.makedirs(checkpoint_dir)
-        checkpoint_dir = os.path.join(checkpoint_dir, self.valid_dataset.classes[self.obj])
-        if not os.path.exists(checkpoint_dir):
-            os.makedirs(checkpoint_dir)
-        
+                
         log_dir = os.path.join(log_dir,'logs')
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
@@ -145,7 +138,7 @@ class FeatureComparisonTrainer(object):
                 grid_features = torch.cat(grid_features)
                 grid_vertices = torch.cat(grid_vertices)
             
-                train_results = evaluateLoss(model, 
+                train_results = multiObjectLoss(model, obj, 
                                              to_var(feat), to_var(quat),
                                              to_var(grid_features), to_var(grid_vertices),
                                              falloff_angle = self.falloff_angle,
@@ -187,7 +180,7 @@ class FeatureComparisonTrainer(object):
                         grid_vertices.append(self.grid_vertices[idx])
                     grid_features = torch.cat(grid_features)
                     grid_vertices = torch.cat(grid_vertices)
-                    valid_results = evaluateLoss(model, 
+                    valid_results = multiObjectLoss(model, obj,
                                                  to_var(feat), to_var(quat),
                                                  to_var(grid_features), to_var(grid_vertices),
                                                  falloff_angle = self.falloff_angle,
@@ -232,10 +225,9 @@ def main():
 
     parser = ArgumentParser()
 
-    parser.add_argument('--dataset_folder', type=str)
-    parser.add_argument('--feature_folder', type=str)
+    parser.add_argument('--dataset_folder', type=str, default=None)
+    parser.add_argument('--feature_folder', type=str, default=None)
 
-    parser.add_argument('--object_index', type=int)
     parser.add_argument('--weight_file', type=str, default=None)
 
     parser.add_argument('--feature_size', type=int, default=1024)
@@ -272,13 +264,12 @@ def main():
     log_dir = os.path.join(args.log_dir,current_timestamp)    
     checkpoint_dir = os.path.join(args.checkpoint_dir,current_timestamp)    
     
-    model = SigmoidCompareNet(args.feature_size, 1)
+    model = SigmoidCompareNet(args.feature_size, 21)
 
     if args.weight_file is not None:
         model.load_state_dict(torch.load(args.weight_file))
 
-    trainer.train(model,
-                  obj = args.object_index,
+    trainer.train(model, 
                   log_dir = log_dir,
                   checkpoint_dir = checkpoint_dir,
                   num_epochs = args.num_epochs,
