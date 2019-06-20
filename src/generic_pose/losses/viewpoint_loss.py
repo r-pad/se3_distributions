@@ -23,16 +23,16 @@ class ViewpointLoss(nn.Module):
         """
         # Set absolute minimum for numerical stability (assuming float16 - 6x10^-5)
         # preds = F.softmax(preds.float())
-        labels = labels.float()
-
-        if self.mean:
-            loss = -(labels * F.log_softmax(preds)).mean(1).sum()
-        else:
-            loss = -(labels * F.log_softmax(preds)).sum(1).sum()
-            
-        loss = loss.sum()
-
-        return loss
+        return viewpointLoss(preds, labels, self.mean)
+   
+def viewpointLoss(preds, labels, mean = True):
+    labels = labels.float()
+    if mean:
+        loss = -(labels * F.log_softmax(preds)).mean(1).sum()
+    else:
+        loss = -(labels * F.log_softmax(preds)).sum(1).sum()
+    loss = loss.sum()
+    return loss
 
 def dotLoss(preds, labels):
     labels = labels.float()

@@ -22,7 +22,7 @@ from object_pose_utils.bbTrans.discretized4dSphere import S3Grid
 from object_pose_utils.utils import to_np, to_var
 
 from object_pose_utils.datasets.feature_dataset import UniformFeatureDataset, FeatureDataset
-from generic_pose.losses.feature_distance_loss import multiObjectLoss
+from generic_pose.losses.feature_distance_loss import evaluateLoss
 from logger import Logger
 
 import resource
@@ -33,10 +33,12 @@ class FeatureComparisonTrainer(object):
     def __init__(self, 
                  dataset_root,
                  feature_root,
-                 falloff_angle = np.pi/4,
-                 batch_size = 16,
-                 num_workers = 4,
-                 seed = 0):
+                 num_augs,
+                 falloff_angle,
+                 batch_size,
+                 num_workers,
+                 seed,
+                 fill_with_exact):
         
         np.random.seed(seed)
         torch.manual_seed(seed)
@@ -47,10 +49,11 @@ class FeatureComparisonTrainer(object):
                                                      feature_root = feature_root, 
                                                      mode = 'train_sym',
                                                      resample_on_error = True,
+                                                     num_augs = num_augs,
+                                                     fill_with_exact = fill_with_exact,
                                                      object_label = obj) for obj in range(1,22)]
-        
-        self.train_dataset = ConcatDataset(self.model_datasets)
 
+        self.train_dataset = ConcatDataset(self.model_datasets)
         self.train_loader = DataLoader(self.train_dataset,
                                        num_workers=num_workers-1,
                                        batch_size=batch_size, 
@@ -61,6 +64,7 @@ class FeatureComparisonTrainer(object):
                                             feature_root = feature_root,
                                             mode = 'valid',
                                             resample_on_error = True,
+                                            num_augs = 0,
                                             object_list = list(range(1,22)))
         
         self.valid_loader = DataLoader(self.valid_dataset,
@@ -72,10 +76,10 @@ class FeatureComparisonTrainer(object):
         self.grid_vertices = {}
         self.grid_features = {}
         for obj in range(1,22):
-            self.grid_vertices[obj] = torch.load(os.path.join(feature_root, 'grid', 
-                '{}_vertices.pt'.format(classes[obj])))
-            self.grid_features[obj] = torch.load(os.path.join(feature_root, 'grid', 
-                '{}_features.pt'.format(classes[obj])))
+            self.grid_vertices[obj] = to_var(torch.load(os.path.join(feature_root, 'grid', 
+                '{}_vertices.pt'.format(classes[obj]))))
+            self.grid_features[obj] = to_var(torch.load(os.path.join(feature_root, 'grid', 
+                '{}_features.pt'.format(classes[obj]))))
 
     def train(self, model, 
               log_dir,
@@ -102,9 +106,16 @@ class FeatureComparisonTrainer(object):
             
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
+        log_dir = os.path.join(log_dir, 'all')
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+
         if not os.path.exists(checkpoint_dir):
             os.makedirs(checkpoint_dir)
-                
+        checkpoint_dir = os.path.join(checkpoint_dir, 'all')
+        if not os.path.exists(checkpoint_dir):
+            os.makedirs(checkpoint_dir)
+        
         log_dir = os.path.join(log_dir,'logs')
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
@@ -140,13 +151,13 @@ class FeatureComparisonTrainer(object):
                 grid_vertices = torch.cat(grid_vertices)
             
                 train_results = multiObjectLoss(model, obj.cuda()-1, 
-                                             to_var(feat), to_var(quat),
-                                             to_var(grid_features), to_var(grid_vertices),
-                                             falloff_angle = self.falloff_angle,
-                                             weight_top = weight_top,
-                                             optimizer = self.optimizer, 
-                                             calc_metrics = log_data,
-                                             )
+                                                to_var(feat), to_var(quat),
+                                                grid_features, grid_vertices,
+                                                falloff_angle = self.falloff_angle,
+                                                weight_top = weight_top,
+                                                optimizer = self.optimizer, 
+                                                calc_metrics = log_data,
+                                                )
 
                 torch.cuda.empty_cache()
 
@@ -182,9 +193,9 @@ class FeatureComparisonTrainer(object):
                         grid_vertices.append(self.grid_vertices[idx])
                     grid_features = torch.cat(grid_features)
                     grid_vertices = torch.cat(grid_vertices)
-                    valid_results = multiObjectLoss(model, obj.cuda()-1,
+                    valid_results = evaluateLoss(model, 
                                                  to_var(feat), to_var(quat),
-                                                 to_var(grid_features), to_var(grid_vertices),
+                                                 grid_features, grid_vertices,
                                                  falloff_angle = self.falloff_angle,
                                                  weight_top = weight_top,
                                                  optimizer = None, 
@@ -225,12 +236,14 @@ def main():
     import datetime
     from argparse import ArgumentParser
     from generic_pose.models.compare_networks import SigmoidCompareNet
+    from generic_pose.models.deterministic_compare_networks import SigmoidCompareNet as DetSigmoidCompareNet
 
     parser = ArgumentParser()
 
-    parser.add_argument('--dataset_folder', type=str, default=None)
-    parser.add_argument('--feature_folder', type=str, default=None)
-
+    parser.add_argument('--dataset_folder', type=str)
+    parser.add_argument('--feature_folder', type=str)
+    parser.add_argument('--num_augs', type=int, default = 20)
+    parser.add_argument('--fill_with_exact', action='store_true')
     parser.add_argument('--weight_file', type=str, default=None)
 
     parser.add_argument('--feature_size', type=int, default=1024)
@@ -242,6 +255,7 @@ def main():
     
     parser.add_argument('--lr', type=float, default=1e-5)
     parser.add_argument('--optimizer', type=str, default='Adam')
+    parser.add_argument('--dropout', action='store_true')
     
     parser.add_argument('--random_seed', type=int, default=0)
 
@@ -255,25 +269,29 @@ def main():
 
     trainer = FeatureComparisonTrainer(dataset_root = args.dataset_folder,
                                        feature_root = args.feature_folder,
+                                       num_augs = args.num_augs,
+                                       fill_with_exact = args.fill_with_exact,
                                        falloff_angle = args.falloff_angle*np.pi/180.0,
                                        batch_size = args.batch_size,
                                        num_workers = args.num_workers,
                                        seed = args.random_seed,
                                        )
 
-
     if(args.checkpoint_dir is None):
         args.checkpoint_dir = args.log_dir
     current_timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     log_dir = os.path.join(args.log_dir,current_timestamp)    
     checkpoint_dir = os.path.join(args.checkpoint_dir,current_timestamp)    
-    
-    model = SigmoidCompareNet(args.feature_size, 21)
+     
+    if(args.dropout):
+        model = SigmoidCompareNet(args.feature_size, 21)
+    else:
+        model = DetSigmoidCompareNet(args.feature_size, 21)
 
     if args.weight_file is not None:
         model.load_state_dict(torch.load(args.weight_file))
 
-    trainer.train(model, 
+    trainer.train(model,
                   log_dir = log_dir,
                   checkpoint_dir = checkpoint_dir,
                   num_epochs = args.num_epochs,

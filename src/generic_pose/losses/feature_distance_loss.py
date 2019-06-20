@@ -15,6 +15,7 @@ def evaluateLoss(model,
                  grid_features,
                  grid_vertices,
                  falloff_angle = np.pi/9.,
+                 weight_top = 1.0,
                  optimizer = None,
                  grid_size = 3885,
                  calc_metrics = True,
@@ -28,7 +29,13 @@ def evaluateLoss(model,
 
     dist_true = tensorAngularDiff(grid_vertices, quats[rep_indices])
 
-    loss = expDistanceLoss(dist_est, to_var(dist_true), reduction='mean')
+    if(weight_top != 1.0):
+        loss = expDistanceLoss(dist_est, to_var(dist_true), reduction='none')
+        min_idx = torch.argmin(dist_true.view(-1, grid_size), dim=1) + torch.arange(num_features).cuda()*grid_size
+        loss[min_idx] *= weight_top
+        loss = loss.mean()
+    else:
+        loss = expDistanceLoss(dist_est, to_var(dist_true), reduction='mean')
 
     if(optimizer is not None):
         model.train()
@@ -66,6 +73,7 @@ def multiObjectLoss(model, objs,
                  grid_features,
                  grid_vertices,
                  falloff_angle = np.pi/9.,
+                 weight_top = 1.0,
                  optimizer = None,
                  grid_size = 3885,
                  calc_metrics = True,
@@ -80,7 +88,13 @@ def multiObjectLoss(model, objs,
 
     dist_true = tensorAngularDiff(grid_vertices, quats[rep_indices])
 
-    loss = expDistanceLoss(dist_est, to_var(dist_true), reduction='mean')
+    if(weight_top != 1.0):
+        loss = expDistanceLoss(dist_est, to_var(dist_true), reduction='none')
+        min_idx = torch.argmin(dist_true.view(-1, grid_size), dim=1) + torch.arange(num_features).cuda()*grid_size
+        loss[min_idx] *= weight_top
+        loss = loss.mean()
+    else:
+        loss = expDistanceLoss(dist_est, to_var(dist_true), reduction='mean')
 
     if(optimizer is not None):
         model.train()

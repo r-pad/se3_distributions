@@ -72,10 +72,10 @@ class FeatureComparisonTrainer(object):
         self.grid_vertices = {}
         self.grid_features = {}
         #for obj in range(1,22):
-        self.grid_vertices[obj] = torch.load(os.path.join(feature_root, 'grid', 
-            '{}_vertices.pt'.format(classes[obj])))
-        self.grid_features[obj] = torch.load(os.path.join(feature_root, 'grid', 
-            '{}_features.pt'.format(classes[obj])))
+        self.grid_vertices[obj] = to_var(torch.load(os.path.join(feature_root, 'grid', 
+            '{}_vertices.pt'.format(classes[obj]))))
+        self.grid_features[obj] = to_var(torch.load(os.path.join(feature_root, 'grid', 
+            '{}_features.pt'.format(classes[obj]))))
 
     def train(self, model, 
               log_dir,
@@ -85,6 +85,7 @@ class FeatureComparisonTrainer(object):
               checkpoint_every_nth,
               lr,
               optimizer,
+              weight_top,
               ):
         
         model.train()
@@ -147,8 +148,9 @@ class FeatureComparisonTrainer(object):
             
                 train_results = evaluateLoss(model, 
                                              to_var(feat), to_var(quat),
-                                             to_var(grid_features), to_var(grid_vertices),
+                                             grid_features, grid_vertices,
                                              falloff_angle = self.falloff_angle,
+                                             weight_top = weight_top,
                                              optimizer = self.optimizer, 
                                              calc_metrics = log_data,
                                              )
@@ -189,8 +191,9 @@ class FeatureComparisonTrainer(object):
                     grid_vertices = torch.cat(grid_vertices)
                     valid_results = evaluateLoss(model, 
                                                  to_var(feat), to_var(quat),
-                                                 to_var(grid_features), to_var(grid_vertices),
+                                                 grid_features, grid_vertices,
                                                  falloff_angle = self.falloff_angle,
+                                                 weight_top = weight_top,
                                                  optimizer = None, 
                                                  calc_metrics = True,
                                                  )
@@ -229,6 +232,7 @@ def main():
     import datetime
     from argparse import ArgumentParser
     from generic_pose.models.compare_networks import SigmoidCompareNet
+    from generic_pose.models.deterministic_compare_networks import SigmoidCompareNet as DetSigmoidCompareNet
 
     parser = ArgumentParser()
 
@@ -240,12 +244,14 @@ def main():
 
     parser.add_argument('--feature_size', type=int, default=1024)
     parser.add_argument('--falloff_angle', type=float, default=20.0)
+    parser.add_argument('--weight_top', type=float, default=1.0)
 
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--num_workers', type=int, default=16)
     
     parser.add_argument('--lr', type=float, default=1e-5)
     parser.add_argument('--optimizer', type=str, default='Adam')
+    parser.add_argument('--dropout', action='store_true')
     
     parser.add_argument('--random_seed', type=int, default=0)
 
@@ -272,8 +278,11 @@ def main():
     current_timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     log_dir = os.path.join(args.log_dir,current_timestamp)    
     checkpoint_dir = os.path.join(args.checkpoint_dir,current_timestamp)    
-    
-    model = SigmoidCompareNet(args.feature_size, 1)
+     
+    if(args.dropout):
+        model = SigmoidCompareNet(args.feature_size, 1)
+    else:
+        model = DetSigmoidCompareNet(args.feature_size, 1)
 
     if args.weight_file is not None:
         model.load_state_dict(torch.load(args.weight_file))
@@ -286,6 +295,7 @@ def main():
                   checkpoint_every_nth = args.checkpoint_every_nth,
                   lr = args.lr,
                   optimizer = args.optimizer,
+                  weight_top = args.weight_top,
                   )
 
 if __name__=='__main__':

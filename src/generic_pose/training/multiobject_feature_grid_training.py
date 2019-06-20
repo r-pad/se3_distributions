@@ -29,7 +29,7 @@ import resource
 rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
 resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))    
 
-class FeatureComparisonTrainer(object):
+class FeatureGridTrainer(object):
     def __init__(self, 
                  dataset_root,
                  feature_root,
@@ -224,7 +224,7 @@ class FeatureComparisonTrainer(object):
 def main():
     import datetime
     from argparse import ArgumentParser
-    from generic_pose.models.compare_networks import SigmoidCompareNet
+    from generic_pose.models.compare_networks import CompareNet
 
     parser = ArgumentParser()
 
@@ -253,7 +253,7 @@ def main():
 
     args = parser.parse_args()
 
-    trainer = FeatureComparisonTrainer(dataset_root = args.dataset_folder,
+    trainer = FeatureiGridTrainer(dataset_root = args.dataset_folder,
                                        feature_root = args.feature_folder,
                                        falloff_angle = args.falloff_angle*np.pi/180.0,
                                        batch_size = args.batch_size,
@@ -268,7 +268,7 @@ def main():
     log_dir = os.path.join(args.log_dir,current_timestamp)    
     checkpoint_dir = os.path.join(args.checkpoint_dir,current_timestamp)    
     
-    model = SigmoidCompareNet(args.feature_size, 21)
+    model = CompareNet(args.feature_size, 21)
 
     if args.weight_file is not None:
         model.load_state_dict(torch.load(args.weight_file))
