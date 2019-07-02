@@ -22,7 +22,7 @@ from object_pose_utils.bbTrans.discretized4dSphere import S3Grid
 from object_pose_utils.utils import to_np, to_var
 
 from object_pose_utils.datasets.feature_dataset import UniformFeatureDataset, FeatureDataset
-from generic_pose.losses.feature_distance_loss import evaluateLoss
+from generic_pose.losses.feature_distance_loss import multiObjectLoss
 from logger import Logger
 
 import resource
@@ -193,14 +193,15 @@ class FeatureComparisonTrainer(object):
                         grid_vertices.append(self.grid_vertices[idx])
                     grid_features = torch.cat(grid_features)
                     grid_vertices = torch.cat(grid_vertices)
-                    valid_results = evaluateLoss(model, 
-                                                 to_var(feat), to_var(quat),
-                                                 grid_features, grid_vertices,
-                                                 falloff_angle = self.falloff_angle,
-                                                 weight_top = weight_top,
-                                                 optimizer = None, 
-                                                 calc_metrics = True,
-                                                 )
+                    valid_results = multiObjectLoss(model, obj.cuda()-1, 
+                                                    to_var(feat), to_var(quat),
+                                                    grid_features, grid_vertices,
+                                                    falloff_angle = self.falloff_angle,
+                                                    weight_top = weight_top,
+                                                    optimizer = None, 
+                                                    calc_metrics = True,
+                                                    )
+
                     torch.cuda.empty_cache()
                     valid_info = {}
                     for k,v in valid_results.items():

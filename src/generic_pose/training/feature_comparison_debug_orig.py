@@ -21,7 +21,7 @@ from tqdm import tqdm, trange
 from object_pose_utils.bbTrans.discretized4dSphere import S3Grid
 from object_pose_utils.utils import to_np, to_var
 
-from object_pose_utils.datasets.feature_dataset import UniformFeatureDataset, FeatureDataset
+from object_pose_utils.datasets.feature_dataset_debug import FeatureDatasetDebug
 from generic_pose.losses.feature_distance_loss import evaluateLoss
 from logger import Logger
 
@@ -31,45 +31,35 @@ resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))
 
 class FeatureComparisonTrainer(object):
     def __init__(self, 
-                 obj,
                  dataset_root,
                  feature_root,
-                 num_augs,
-                 feature_key,
-                 falloff_angle,
-                 batch_size,
-                 num_workers,
-                 seed,
-                 fill_with_exact):
+                 falloff_angle = np.pi/4,
+                 batch_size = 16,
+                 num_workers = 4,
+                 seed = 0):
         
         np.random.seed(seed)
         torch.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
 
-        self.obj = obj
         self.falloff_angle = falloff_angle
-        self.train_dataset = UniformFeatureDataset(dataset_root = dataset_root,
-                                                     feature_root = feature_root, 
-                                                     mode = 'train_sym',
-                                                     resample_on_error = True,
-                                                     num_augs = num_augs,
-                                                     feature_key = feature_key,
-                                                     fill_with_exact = fill_with_exact,
-                                                     object_label = obj)
-
+        self.train_dataset = FeatureDatasetDebug(dataset_root = dataset_root,
+                                                 feature_root = feature_root,
+                                                 mode = 'train_sym',
+                                                 resample_on_error = True,
+                                                 object_list = [1])
+        
         self.train_loader = DataLoader(self.train_dataset,
                                        num_workers=num_workers-1,
                                        batch_size=batch_size, 
                                        shuffle=True)
 
 
-        self.valid_dataset = FeatureDataset(dataset_root = dataset_root,
-                                            feature_root = feature_root,
-                                            mode = 'valid',
-                                            resample_on_error = True,
-                                            num_augs = 0,
-                                            feature_key = feature_key,
-                                            object_list = [obj])
+        self.valid_dataset = FeatureDatasetDebug(dataset_root = dataset_root,
+                                                 feature_root = feature_root,
+                                                 mode = 'valid',
+                                                 resample_on_error = True,
+                                                 object_list = [1])
         
         self.valid_loader = DataLoader(self.valid_dataset,
                                        num_workers=1, 
@@ -79,11 +69,11 @@ class FeatureComparisonTrainer(object):
         classes = self.valid_dataset.classes
         self.grid_vertices = {}
         self.grid_features = {}
-        #for obj in range(1,22):
-        self.grid_vertices[obj] = to_var(torch.load(os.path.join(feature_root, 'grid', 
-            '{}_vertices.pt'.format(classes[obj]))))
-        self.grid_features[obj] = to_var(torch.load(os.path.join(feature_root, 'grid', 
-            '{}_{}_features.pt'.format(feature_key, classes[obj]))))
+        for obj in range(1,22):
+            self.grid_vertices[obj] = torch.load(os.path.join(feature_root, 'grid', 
+                '{}_vertices.pt'.format(classes[obj])))
+            self.grid_features[obj] = torch.load(os.path.join(feature_root, 'grid', 
+                '{}_features.pt'.format(classes[obj])))
 
     def train(self, model, 
               log_dir,
@@ -93,8 +83,6 @@ class FeatureComparisonTrainer(object):
               checkpoint_every_nth,
               lr,
               optimizer,
-              weight_top,
-              max_samples,
               ):
         
         model.train()
@@ -111,16 +99,9 @@ class FeatureComparisonTrainer(object):
             
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
-        log_dir = os.path.join(log_dir, self.valid_dataset.classes[self.obj])
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-
         if not os.path.exists(checkpoint_dir):
             os.makedirs(checkpoint_dir)
-        checkpoint_dir = os.path.join(checkpoint_dir, self.valid_dataset.classes[self.obj])
-        if not os.path.exists(checkpoint_dir):
-            os.makedirs(checkpoint_dir)
-        
+                
         log_dir = os.path.join(log_dir,'logs')
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
@@ -157,9 +138,8 @@ class FeatureComparisonTrainer(object):
             
                 train_results = evaluateLoss(model, 
                                              to_var(feat), to_var(quat),
-                                             grid_features, grid_vertices,
+                                             to_var(grid_features), to_var(grid_vertices),
                                              falloff_angle = self.falloff_angle,
-                                             weight_top = weight_top,
                                              optimizer = self.optimizer, 
                                              calc_metrics = log_data,
                                              )
@@ -189,24 +169,22 @@ class FeatureComparisonTrainer(object):
                     #########################################
                     ############ VALIDATION SETS ############
                     #########################################
-                    with torch.no_grad(): 
-                        obj, feat, quat = next(iter(self.valid_loader))
-                        torch.cuda.empty_cache()
-                        grid_features = []
-                        grid_vertices = []
-                        for idx in to_np(obj).flat:
-                            grid_features.append(self.grid_features[idx])
-                            grid_vertices.append(self.grid_vertices[idx])
-                        grid_features = torch.cat(grid_features)
-                        grid_vertices = torch.cat(grid_vertices)
-                        valid_results = evaluateLoss(model, 
-                                                     to_var(feat), to_var(quat),
-                                                     grid_features, grid_vertices,
-                                                     falloff_angle = self.falloff_angle,
-                                                     weight_top = weight_top,
-                                                     optimizer = None, 
-                                                     calc_metrics = True,
-                                                     )
+                    obj, feat, quat = next(iter(self.valid_loader))
+                    torch.cuda.empty_cache()
+                    grid_features = []
+                    grid_vertices = []
+                    for idx in to_np(obj).flat:
+                        grid_features.append(self.grid_features[idx])
+                        grid_vertices.append(self.grid_vertices[idx])
+                    grid_features = torch.cat(grid_features)
+                    grid_vertices = torch.cat(grid_vertices)
+                    valid_results = evaluateLoss(model, 
+                                                 to_var(feat), to_var(quat),
+                                                 to_var(grid_features), to_var(grid_vertices),
+                                                 falloff_angle = self.falloff_angle,
+                                                 optimizer = None, 
+                                                 calc_metrics = True,
+                                                 )
                     torch.cuda.empty_cache()
                     valid_info = {}
                     for k,v in valid_results.items():
@@ -237,77 +215,59 @@ class FeatureComparisonTrainer(object):
                     last_checkpoint_filename = checkpoint_weights_filename
 
                 cumulative_batch_idx += 1
-                if(cumulative_batch_idx * self.train_loader.batch_size >= max_samples):
-                    break
-    checkpoint_weights_filename = os.path.join(weights_dir, 'final_{}.pth'.format(cumulative_batch_idx+1))
-    print("final model ", checkpoint_weights_filename)
-    torch.save(model.state_dict(), checkpoint_weights_filename)
-                
+
 def main():
     import datetime
     from argparse import ArgumentParser
     from generic_pose.models.compare_networks import SigmoidCompareNet
-    from generic_pose.models.deterministic_compare_networks import SigmoidCompareNet as DetSigmoidCompareNet
 
     parser = ArgumentParser()
 
-    parser.add_argument('--dataset_folder', type=str)
-    parser.add_argument('--feature_folder', type=str)
-    parser.add_argument('--num_augs', type=int, default = 0)
-    parser.add_argument('--feature_key', type=str, default = 'feat')
-    parser.add_argument('--fill_with_exact', action='store_true')
-    parser.add_argument('--object_index', type=int)
+    parser.add_argument('--dataset_folder', type=str, default=None)
+    parser.add_argument('--feature_folder', type=str, default=None)
+
     parser.add_argument('--weight_file', type=str, default=None)
 
     parser.add_argument('--feature_size', type=int, default=1024)
     parser.add_argument('--falloff_angle', type=float, default=20.0)
-    parser.add_argument('--weight_top', type=float, default=1.0)
 
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--num_workers', type=int, default=16)
     
     parser.add_argument('--lr', type=float, default=1e-5)
     parser.add_argument('--optimizer', type=str, default='Adam')
-    parser.add_argument('--dropout', action='store_true')
     
     parser.add_argument('--random_seed', type=int, default=0)
 
     parser.add_argument('--log_dir', type=str, default='results/') 
     parser.add_argument('--checkpoint_dir', type=str, default=None) 
-    parser.add_argument('--num_epochs', type=int, default=100)
+    parser.add_argument('--num_epochs', type=int, default=10000)
     parser.add_argument('--log_every_nth', type=int, default=100)
     parser.add_argument('--checkpoint_every_nth', type=int, default=1000)
-    parser.add_argument('--max_samples', type=int, default=100000)
 
     args = parser.parse_args()
 
-    trainer = FeatureComparisonTrainer(obj = args.object_index,
-                                       dataset_root = args.dataset_folder,
+    trainer = FeatureComparisonTrainer(dataset_root = args.dataset_folder,
                                        feature_root = args.feature_folder,
-                                       num_augs = args.num_augs,
-                                       feature_key = args.feature_key,
-                                       fill_with_exact = args.fill_with_exact,
                                        falloff_angle = args.falloff_angle*np.pi/180.0,
                                        batch_size = args.batch_size,
                                        num_workers = args.num_workers,
                                        seed = args.random_seed,
                                        )
 
+
     if(args.checkpoint_dir is None):
         args.checkpoint_dir = args.log_dir
     current_timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     log_dir = os.path.join(args.log_dir,current_timestamp)    
     checkpoint_dir = os.path.join(args.checkpoint_dir,current_timestamp)    
-     
-    if(args.dropout):
-        model = SigmoidCompareNet(args.feature_size, 1)
-    else:
-        model = DetSigmoidCompareNet(args.feature_size, 1)
+    
+    model = SigmoidCompareNet(args.feature_size, 1)
 
     if args.weight_file is not None:
         model.load_state_dict(torch.load(args.weight_file))
 
-    trainer.train(model,
+    trainer.train(model, 
                   log_dir = log_dir,
                   checkpoint_dir = checkpoint_dir,
                   num_epochs = args.num_epochs,
@@ -315,8 +275,6 @@ def main():
                   checkpoint_every_nth = args.checkpoint_every_nth,
                   lr = args.lr,
                   optimizer = args.optimizer,
-                  weight_top = args.weight_top,
-                  max_samples = args.max_samples,
                   )
 
 if __name__=='__main__':

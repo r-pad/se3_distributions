@@ -34,10 +34,11 @@ class FeatureGridTrainer(object):
                  obj,
                  dataset_root,
                  feature_root,
-                 falloff_angle = np.pi/4,
-                 batch_size = 16,
-                 num_workers = 4,
-                 seed = 0):
+                 falloff_angle,
+                 num_augs,
+                 batch_size,
+                 num_workers,
+                 seed):
         
         np.random.seed(seed)
         torch.manual_seed(seed)
@@ -48,7 +49,9 @@ class FeatureGridTrainer(object):
         self.train_dataset = UniformFeatureDataset(dataset_root = dataset_root,
                                                      feature_root = feature_root, 
                                                      mode = 'train_sym',
+                                                     num_augs = num_augs,
                                                      resample_on_error = True,
+                                                     fill_with_exact = True,
                                                      object_label = obj)
         
         self.train_loader = DataLoader(self.train_dataset,
@@ -60,6 +63,7 @@ class FeatureGridTrainer(object):
         self.valid_dataset = FeatureDataset(dataset_root = dataset_root,
                                             feature_root = feature_root,
                                             mode = 'valid',
+                                            num_augs = 0,
                                             resample_on_error = True,
                                             object_list = [obj])
         
@@ -74,8 +78,6 @@ class FeatureGridTrainer(object):
         #for obj in range(1,22):
         self.grid_vertices[obj] = torch.load(os.path.join(feature_root, 'grid', 
             '{}_vertices.pt'.format(classes[obj])))
-        self.grid_features[obj] = torch.load(os.path.join(feature_root, 'grid', 
-            '{}_features.pt'.format(classes[obj])))
 
     def train(self, model, 
               log_dir,
@@ -138,17 +140,14 @@ class FeatureGridTrainer(object):
                 obj, feat, quat = data
                 log_data = not((cumulative_batch_idx+1) % log_every_nth)
                 torch.cuda.empty_cache()
-                grid_features = []
                 grid_vertices = []
                 for idx in to_np(obj).flat:
-                    grid_features.append(self.grid_features[idx])
                     grid_vertices.append(self.grid_vertices[idx])
-                grid_features = torch.cat(grid_features)
                 grid_vertices = torch.cat(grid_vertices)
             
                 train_results = evaluateLoss(model, 
                                              to_var(feat), to_var(quat),
-                                             to_var(grid_features), to_var(grid_vertices),
+                                             to_var(grid_vertices),
                                              falloff_angle = self.falloff_angle,
                                              #weight_top = weight_top,
                                              optimizer = self.optimizer, 
@@ -182,16 +181,14 @@ class FeatureGridTrainer(object):
                     #########################################
                     obj, feat, quat = next(iter(self.valid_loader))
                     torch.cuda.empty_cache()
-                    grid_features = []
                     grid_vertices = []
                     for idx in to_np(obj).flat:
-                        grid_features.append(self.grid_features[idx])
                         grid_vertices.append(self.grid_vertices[idx])
                     grid_features = torch.cat(grid_features)
                     grid_vertices = torch.cat(grid_vertices)
                     valid_results = evaluateLoss(model, 
                                                  to_var(feat), to_var(quat),
-                                                 to_var(grid_features), to_var(grid_vertices),
+                                                 to_var(grid_vertices),
                                                  falloff_angle = self.falloff_angle,
                                                  #weight_top = weight_top,
                                                  optimizer = None, 
@@ -241,6 +238,7 @@ def main():
     parser.add_argument('--object_index', type=int)
     parser.add_argument('--weight_file', type=str, default=None)
 
+    parser.add_argument('--num_augs', type=int, default = 0)
     parser.add_argument('--feature_size', type=int, default=1024)
     parser.add_argument('--falloff_angle', type=float, default=20.0)
     #parser.add_argument('--weight_top', type=float, default=1.0)
@@ -265,6 +263,7 @@ def main():
                                        dataset_root = args.dataset_folder,
                                        feature_root = args.feature_folder,
                                        falloff_angle = args.falloff_angle*np.pi/180.0,
+                                       num_augs = args.num_augs,
                                        batch_size = args.batch_size,
                                        num_workers = args.num_workers,
                                        seed = args.random_seed,

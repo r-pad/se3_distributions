@@ -12,10 +12,9 @@ import torch.nn.functional as F
 
 def evaluateLoss(model,  
                  features, quats, 
-                 grid_features,
                  grid_vertices,
                  falloff_angle = np.pi/9.,
- #                weight_top = 1.0,
+                 #weight_top = 1.0,
                  optimizer = None,
                  grid_size = 3885,
                  calc_metrics = True,
@@ -29,9 +28,9 @@ def evaluateLoss(model,
     labels = torch.exp(-dist_true/falloff_angle)
     loss = -(labels * F.log_softmax(dist_est, dim=1))
 
-#    if(weight_top != 1.0):
-#        min_idx = torch.argmin(dist_true, dim=1)
-#        loss[min_idx] *= weight_top
+    #if(weight_top != 1.0):
+    #    min_idx = torch.argmin(dist_true, dim=1)
+    #    loss[min_idx] *= weight_top
 
     loss = loss.mean(1).sum()
 

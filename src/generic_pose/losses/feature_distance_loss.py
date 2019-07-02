@@ -32,7 +32,9 @@ def evaluateLoss(model,
     if(weight_top != 1.0):
         loss = expDistanceLoss(dist_est, to_var(dist_true), reduction='none')
         min_idx = torch.argmin(dist_true.view(-1, grid_size), dim=1) + torch.arange(num_features).cuda()*grid_size
+        #top_idx = torch.argmax(dist_est.view(-1, grid_size), dim=1) + torch.arange(num_features).cuda()*grid_size
         loss[min_idx] *= weight_top
+        #loss[top_idx] *= weight_top
         loss = loss.mean()
     else:
         loss = expDistanceLoss(dist_est, to_var(dist_true), reduction='mean')
@@ -64,6 +66,7 @@ def evaluateLoss(model,
         top_idx_flat = np.ravel_multi_index(np.stack([np.arange(dist_shape[0]), to_np(top_idx)]), dist_shape)
 
         metrics['output_gt'] = to_np(dist_est.view(-1)[true_idx_flat]).mean()
+        metrics['dist_gt'] = to_np(dist_true.view(-1)[true_idx_flat]).mean()*180./np.pi
         metrics['dist_top'] = to_np(dist_true.view(-1)[top_idx_flat]).mean()*180./np.pi
 
     return metrics  
