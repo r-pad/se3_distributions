@@ -67,6 +67,7 @@ def evaluateLoss(model,
 
         metrics['output_gt'] = to_np(dist_est.view(-1)[true_idx_flat]).mean()
         metrics['dist_gt'] = to_np(dist_true.view(-1)[true_idx_flat]).mean()*180./np.pi
+        metrics['exp_output_gt'] = np.exp(-metrics['dist_gt']*np.pi/180.0/(falloff_angle)) 
         metrics['dist_top'] = to_np(dist_true.view(-1)[top_idx_flat]).mean()*180./np.pi
 
     return metrics  
@@ -108,25 +109,28 @@ def multiObjectLoss(model, objs,
     metrics['loss'] = float(to_np(loss))
     
     if(calc_metrics):
-        dist_est = dist_est.view(-1, grid_size)
-        dist_true = dist_true.view(-1, grid_size)
-        top_idx = torch.argmax(dist_est, dim=1).detach()
-        metrics['top_idx_vec'] = to_np(top_idx)
-        true_idx = torch.argmin(dist_true, dim=1).detach()
-        metrics['true_idx_vec'] = to_np(true_idx)
+        for obj_id in torch.unique(objs):
+            obj_idxs = (objs == obj_id).nonzero()[:,0]
+            dist_est_obj = dist_est.view(-1, grid_size)[obj_idxs]
+            dist_true_obj = dist_true.view(-1, grid_size)[obj_idxs]
+            top_idx = torch.argmax(dist_est_obj, dim=1).detach()
+            metrics['{}_top_idx_vec'.format(obj_id)] = to_np(top_idx)
+            true_idx = torch.argmin(dist_true_obj, dim=1).detach()
+            metrics['{}_true_idx_vec'.format(obj_id)] = to_np(true_idx)
 
-        metrics['rank_gt'] = to_np((torch.sort(dist_est, descending=True, dim=1)[1] \
-                == true_idx.unsqueeze(1)).nonzero()[:,1]).mean()
+            metrics['{}_rank_gt'.format(obj_id)] = to_np((torch.sort(dist_est_obj, descending=True, dim=1)[1] \
+                    == true_idx.unsqueeze(1)).nonzero()[:,1]).mean()
 
-        metrics['rank_top'] = to_np((torch.sort(dist_true, dim=1)[1] \
-                == top_idx.unsqueeze(1)).nonzero()[:,1]).mean()
-       
-        dist_shape = dist_est.shape
-        true_idx_flat = np.ravel_multi_index(np.stack([np.arange(dist_shape[0]), to_np(true_idx)]), dist_shape)
-        top_idx_flat = np.ravel_multi_index(np.stack([np.arange(dist_shape[0]), to_np(top_idx)]), dist_shape)
+            metrics['{}_rank_top'.format(obj_id)] = to_np((torch.sort(dist_true_obj, dim=1)[1] \
+                    == top_idx.unsqueeze(1)).nonzero()[:,1]).mean()
+             
+            dist_shape = dist_est_obj.shape
+            true_idx_flat = np.ravel_multi_index(np.stack([np.arange(dist_shape[0]), to_np(true_idx)]), dist_shape)
+            top_idx_flat = np.ravel_multi_index(np.stack([np.arange(dist_shape[0]), to_np(top_idx)]), dist_shape)
 
-        metrics['output_gt'] = to_np(dist_est.view(-1)[true_idx_flat]).mean()
-        metrics['dist_top'] = to_np(dist_true.view(-1)[top_idx_flat]).mean()*180./np.pi
+            metrics['{}_output_gt'.format(obj_id)] = to_np(dist_est_obj.view(-1)[true_idx_flat]).mean()
+            metrics['{}_dist_gt'.format(obj_id)] = to_np(dist_true_obj.view(-1)[true_idx_flat]).mean()*180./np.pi
+            metrics['{}_dist_top'.format(obj_id)] = to_np(dist_true_obj.view(-1)[top_idx_flat]).mean()*180./np.pi
 
     return metrics  
 

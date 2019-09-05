@@ -7,7 +7,6 @@
 import math
 import numpy as np
 from scipy import spatial
-from transforms3d.quaternions import quat2mat, mat2quat
 
 def transform_pts_Rt(pts, R, t):
     """
