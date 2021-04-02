@@ -1,0 +1,16 @@
+set -e
+
+lr=1e-5
+
+python ../../src/generic_pose/training/loglik_training_linemod.py \
+    --log_dir '/scratch/bokorn/results/log_lik_linemod/df_global_comp/lr_'$lr \
+    --dataset_folder '/ssd0/datasets/linemod/Linemod_preprocessed/' \
+    --feature_folder '/scratch/datasets/linemod/' \
+    --feature_key 'feat_global' \
+    --feature_size 1024 \
+    --use_comparison \
+    --num_epochs 100000 \
+    --batch_size 24 \
+    --fill_with_exact \
+    --interp_k 4\
+    --lr $lr \

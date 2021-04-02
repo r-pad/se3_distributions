@@ -276,7 +276,7 @@ def main():
     parser.add_argument('--log_dir', type=str, default='results/') 
     parser.add_argument('--checkpoint_dir', type=str, default=None) 
     parser.add_argument('--num_epochs', type=int, default=100)
-    parser.add_argument('--log_every_nth', type=int, default=100)
+    parser.add_argument('--log_every_nth', type=int, default=10)
     parser.add_argument('--checkpoint_every_nth', type=int, default=1000)
 
     args = parser.parse_args()

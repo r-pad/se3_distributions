@@ -44,6 +44,44 @@ class SigmoidCompareNet(nn.Module):
     def forward(self, v1, v2):
         return self.network(torch.cat((v1, v2), dim=1))
 
+class SigmoidComparePropNet(nn.Module):
+    def __init__(self, features_size, output_dim):
+        super(SigmoidComparePropNet, self).__init__()
+
+        self.network = nn.Sequential(
+                                     nn.Dropout(),
+                                     nn.Linear(features_size * 2, features_size),
+                                     nn.ReLU(inplace=True),
+                                     nn.Dropout(),
+                                     nn.Linear(features_size, features_size),
+                                     nn.ReLU(inplace=True),
+                                     nn.Linear(features_size, int(np.prod(output_dim))),
+                                     nn.Sigmoid()
+                                     )
+    def forward(self, v1, v2):
+        return self.network(torch.cat((v1, v2), dim=1))
+
+    
+class SigmoidCompareFunnelNet(nn.Module):
+    def __init__(self, features_size, output_dim):
+        super(SigmoidCompareFunnelNet, self).__init__()
+
+        self.network = nn.Sequential(
+                                     nn.Dropout(),
+                                     nn.Linear(features_size * 2, features_size),
+                                     nn.ReLU(inplace=True),
+                                     nn.Dropout(),
+                                     nn.Linear(features_size, features_size//2),
+                                     nn.ReLU(inplace=True),
+                                     nn.Dropout(),
+                                     nn.Linear(features_size//2, features_size//4),
+                                     nn.ReLU(inplace=True),
+                                     nn.Linear(features_size//4, int(np.prod(output_dim))),
+                                     nn.Sigmoid()
+                                     )
+    def forward(self, v1, v2):
+        return self.network(torch.cat((v1, v2), dim=1))
+
 
 
 class SigmoidWideCompareNet(nn.Module):
@@ -232,6 +270,39 @@ class SigmoidNet(nn.Module):
     def forward(self, v):
         return self.network(v)
 
+class SigmoidPropNet(nn.Module):
+    def __init__(self, features_size, output_dim):
+        super(SigmoidNet, self).__init__()
+
+        self.network = nn.Sequential(
+                                     nn.Dropout(),
+                                     nn.Linear(features_size, 4096),
+                                     nn.ReLU(inplace=True),
+                                     nn.Dropout(),
+                                     nn.Linear(features_size, features_size),
+                                     nn.ReLU(inplace=True),
+                                     nn.Linear(features_size, int(np.prod(output_dim))),
+                                     nn.Sigmoid()
+                                     )
+    def forward(self, v):
+        return self.network(v)
+
+class SigmoidFunnelNet(nn.Module):
+    def __init__(self, features_size, output_dim):
+        super(SigmoidFunnelNet, self).__init__()
+
+        self.network = nn.Sequential(
+                                     nn.Dropout(),
+                                     nn.Linear(features_size, features_size//2),
+                                     nn.ReLU(inplace=True),
+                                     nn.Dropout(),
+                                     nn.Linear(features_size//2, features_size//4),
+                                     nn.ReLU(inplace=True),
+                                     nn.Linear(features_size//4, int(np.prod(output_dim))),
+                                     nn.Sigmoid()
+                                     )
+    def forward(self, v):
+        return self.network(v)
 
 compare_networks = {
                     'basic':CompareNet,

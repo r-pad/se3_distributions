@@ -50,7 +50,7 @@ class FeatureComparisonTrainer(object):
         self.falloff_angle = falloff_angle
         self.train_dataset = UniformFeatureDataset(dataset_root = dataset_root,
                                                      feature_root = feature_root, 
-                                                     mode = 'train_sym',
+                                                     mode = 'train_sym_valid',
                                                      resample_on_error = True,
                                                      num_augs = num_augs,
                                                      feature_key = feature_key,
@@ -94,7 +94,7 @@ class FeatureComparisonTrainer(object):
               lr,
               optimizer,
               weight_top,
-              max_samples,
+              max_iter,
               ):
         
         model.train()
@@ -237,11 +237,12 @@ class FeatureComparisonTrainer(object):
                     last_checkpoint_filename = checkpoint_weights_filename
 
                 cumulative_batch_idx += 1
-                if(cumulative_batch_idx * self.train_loader.batch_size >= max_samples):
+                if(cumulative_batch_idx >= max_iter):
                     break
-    checkpoint_weights_filename = os.path.join(weights_dir, 'final_{}.pth'.format(cumulative_batch_idx+1))
-    print("final model ", checkpoint_weights_filename)
-    torch.save(model.state_dict(), checkpoint_weights_filename)
+    
+        checkpoint_weights_filename = os.path.join(weights_dir, 'final_{}.pth'.format(cumulative_batch_idx+1))
+        print("final model ", checkpoint_weights_filename)
+        torch.save(model.state_dict(), checkpoint_weights_filename)
                 
 def main():
     import datetime
@@ -277,7 +278,7 @@ def main():
     parser.add_argument('--num_epochs', type=int, default=100)
     parser.add_argument('--log_every_nth', type=int, default=100)
     parser.add_argument('--checkpoint_every_nth', type=int, default=1000)
-    parser.add_argument('--max_samples', type=int, default=100000)
+    parser.add_argument('--max_iterations', type=int, default=40000)
 
     args = parser.parse_args()
 
@@ -316,7 +317,7 @@ def main():
                   lr = args.lr,
                   optimizer = args.optimizer,
                   weight_top = args.weight_top,
-                  max_samples = args.max_samples,
+                  max_iter = args.max_iterations,
                   )
 
 if __name__=='__main__':

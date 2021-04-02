@@ -34,6 +34,7 @@ class FeatureGridTrainer(object):
                  obj,
                  dataset_root,
                  feature_root,
+                 feature_key,
                  falloff_angle,
                  num_augs,
                  batch_size,
@@ -48,6 +49,7 @@ class FeatureGridTrainer(object):
         self.falloff_angle = falloff_angle
         self.train_dataset = UniformFeatureDataset(dataset_root = dataset_root,
                                                      feature_root = feature_root, 
+                                                     feature_key = feature_key,
                                                      mode = 'train_sym',
                                                      num_augs = num_augs,
                                                      resample_on_error = True,
@@ -62,6 +64,7 @@ class FeatureGridTrainer(object):
 
         self.valid_dataset = FeatureDataset(dataset_root = dataset_root,
                                             feature_root = feature_root,
+                                            feature_key = feature_key,
                                             mode = 'valid',
                                             num_augs = 0,
                                             resample_on_error = True,
@@ -87,7 +90,7 @@ class FeatureGridTrainer(object):
               checkpoint_every_nth,
               lr,
               optimizer,
-              #weight_top,
+              weight_top,
               ):
         
         model.train()
@@ -149,7 +152,7 @@ class FeatureGridTrainer(object):
                                              to_var(feat), to_var(quat),
                                              to_var(grid_vertices),
                                              falloff_angle = self.falloff_angle,
-                                             #weight_top = weight_top,
+                                             weight_top = weight_top,
                                              optimizer = self.optimizer, 
                                              calc_metrics = log_data,
                                              )
@@ -184,13 +187,12 @@ class FeatureGridTrainer(object):
                     grid_vertices = []
                     for idx in to_np(obj).flat:
                         grid_vertices.append(self.grid_vertices[idx])
-                    grid_features = torch.cat(grid_features)
                     grid_vertices = torch.cat(grid_vertices)
                     valid_results = evaluateLoss(model, 
                                                  to_var(feat), to_var(quat),
                                                  to_var(grid_vertices),
                                                  falloff_angle = self.falloff_angle,
-                                                 #weight_top = weight_top,
+                                                 weight_top = weight_top,
                                                  optimizer = None, 
                                                  calc_metrics = True,
                                                  )
@@ -224,6 +226,11 @@ class FeatureGridTrainer(object):
                     last_checkpoint_filename = checkpoint_weights_filename
 
                 cumulative_batch_idx += 1
+                if(cumulative_batch_idx >= 20000):
+                    checkpoint_weights_filename = os.path.join(weights_dir, 'final_{}.pth'.format(cumulative_batch_idx+1))
+                    print("final model ", checkpoint_weights_filename)
+                    torch.save(model.state_dict(), checkpoint_weights_filename)
+                    return
 
 def main():
     import datetime
@@ -240,8 +247,9 @@ def main():
 
     parser.add_argument('--num_augs', type=int, default = 0)
     parser.add_argument('--feature_size', type=int, default=1024)
+    parser.add_argument('--feature_key', type=str, default = 'feat')
     parser.add_argument('--falloff_angle', type=float, default=20.0)
-    #parser.add_argument('--weight_top', type=float, default=1.0)
+    parser.add_argument('--weight_top', type=float, default=1.0)
 
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--num_workers', type=int, default=16)
@@ -262,6 +270,7 @@ def main():
     trainer = FeatureGridTrainer(obj = args.object_index,
                                        dataset_root = args.dataset_folder,
                                        feature_root = args.feature_folder,
+                                       feature_key = args.feature_key,
                                        falloff_angle = args.falloff_angle*np.pi/180.0,
                                        num_augs = args.num_augs,
                                        batch_size = args.batch_size,
@@ -289,7 +298,7 @@ def main():
                   checkpoint_every_nth = args.checkpoint_every_nth,
                   lr = args.lr,
                   optimizer = args.optimizer,
-                  #weight_top = args.weight_top,
+                  weight_top = args.weight_top,
                   )
 
 if __name__=='__main__':
