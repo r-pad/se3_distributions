@@ -1,0 +1,10 @@
+python ../../src/generic_pose/training/multiobject_feature_grid_debug.py \
+    --log_dir '/scratch/bokorn/results/debug/feature_grid_comparison_lr_'${1}'_top_x2000' \
+    --dataset_folder '/ssd0/datasets/ycb/YCB_Video_Dataset' \
+    --feature_folder '/scratch/bokorn/results/dense_fusion_global_feat' \
+    --feature_size 1024 \
+    --num_epochs 100000 \
+    --batch_size 2 \
+    --falloff_angle 20.0 \
+    --lr ${1} \
+    --weight_top 2000 \

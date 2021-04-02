@@ -333,21 +333,21 @@ def main():
                   )
 
 if __name__=='__main__':
-    import socket
-    import seuss_cluster_alerts as sca
-    hostname = socket.gethostname()
-    gpu_id = os.environ.get('CUDA_VISIBLE_DEVICES')
-    if(gpu_id is not None):
-        hostname += ' GPU {}'.format(gpu_id)
+    #import socket
+    #import seuss_cluster_alerts as sca
+    #hostname = socket.gethostname()
+    #gpu_id = os.environ.get('CUDA_VISIBLE_DEVICES')
+    #if(gpu_id is not None):
+    #    hostname += ' GPU {}'.format(gpu_id)
 
     try:
         main()
-        sca.sendAlert('bokorn@andrew.cmu.edu', 
-                       message_subject='Job Completed on {}'.format(hostname))
+        #sca.sendAlert('bokorn@andrew.cmu.edu', 
+        #               message_subject='Job Completed on {}'.format(hostname))
 
     except:
         e = sys.exc_info()
-        sca.sendAlert('bokorn@andrew.cmu.edu', 
-                message_subject='Job Failed on {}'.format(hostname),
-                message_text=str(e))
+        #sca.sendAlert('bokorn@andrew.cmu.edu', 
+        #        message_subject='Job Failed on {}'.format(hostname),
+        #        message_text=str(e))
         raise

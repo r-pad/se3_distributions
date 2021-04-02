@@ -33,6 +33,7 @@ class FeatureComparisonTrainer(object):
     def __init__(self, 
                  dataset_root,
                  feature_root,
+                 feature_key,
                  num_augs,
                  falloff_angle,
                  batch_size,
@@ -49,6 +50,7 @@ class FeatureComparisonTrainer(object):
                                                      feature_root = feature_root, 
                                                      mode = 'train_sym',
                                                      resample_on_error = True,
+                                                     feature_key = feature_key,
                                                      num_augs = num_augs,
                                                      fill_with_exact = fill_with_exact,
                                                      object_label = obj) for obj in range(1,22)]
@@ -64,6 +66,7 @@ class FeatureComparisonTrainer(object):
                                             feature_root = feature_root,
                                             mode = 'valid',
                                             resample_on_error = True,
+                                            feature_key = feature_key,
                                             num_augs = 0,
                                             object_list = list(range(1,22)))
         
@@ -79,7 +82,7 @@ class FeatureComparisonTrainer(object):
             self.grid_vertices[obj] = to_var(torch.load(os.path.join(feature_root, 'grid', 
                 '{}_vertices.pt'.format(classes[obj]))))
             self.grid_features[obj] = to_var(torch.load(os.path.join(feature_root, 'grid', 
-                '{}_features.pt'.format(classes[obj]))))
+                '{}_{}_features.pt'.format(feature_key, classes[obj]))))
 
     def train(self, model, 
               log_dir,
@@ -184,23 +187,24 @@ class FeatureComparisonTrainer(object):
                     #########################################
                     ############ VALIDATION SETS ############
                     #########################################
-                    obj, feat, quat = next(iter(self.valid_loader))
-                    torch.cuda.empty_cache()
-                    grid_features = []
-                    grid_vertices = []
-                    for idx in to_np(obj).flat:
-                        grid_features.append(self.grid_features[idx])
-                        grid_vertices.append(self.grid_vertices[idx])
-                    grid_features = torch.cat(grid_features)
-                    grid_vertices = torch.cat(grid_vertices)
-                    valid_results = multiObjectLoss(model, obj.cuda()-1, 
-                                                    to_var(feat), to_var(quat),
-                                                    grid_features, grid_vertices,
-                                                    falloff_angle = self.falloff_angle,
-                                                    weight_top = weight_top,
-                                                    optimizer = None, 
-                                                    calc_metrics = True,
-                                                    )
+                    with torch.no_grad(): 
+                        obj, feat, quat = next(iter(self.valid_loader))
+                        torch.cuda.empty_cache()
+                        grid_features = []
+                        grid_vertices = []
+                        for idx in to_np(obj).flat:
+                            grid_features.append(self.grid_features[idx])
+                            grid_vertices.append(self.grid_vertices[idx])
+                        grid_features = torch.cat(grid_features)
+                        grid_vertices = torch.cat(grid_vertices)
+                        valid_results = multiObjectLoss(model, obj.cuda()-1, 
+                                                        to_var(feat), to_var(quat),
+                                                        grid_features, grid_vertices,
+                                                        falloff_angle = self.falloff_angle,
+                                                        weight_top = weight_top,
+                                                        optimizer = None, 
+                                                        calc_metrics = True,
+                                                        )
 
                     torch.cuda.empty_cache()
                     valid_info = {}
@@ -243,7 +247,8 @@ def main():
 
     parser.add_argument('--dataset_folder', type=str)
     parser.add_argument('--feature_folder', type=str)
-    parser.add_argument('--num_augs', type=int, default = 20)
+    parser.add_argument('--feature_key', type=str, default = 'feat')
+    parser.add_argument('--num_augs', type=int, default = 0)
     parser.add_argument('--fill_with_exact', action='store_true')
     parser.add_argument('--weight_file', type=str, default=None)
 
@@ -270,6 +275,7 @@ def main():
 
     trainer = FeatureComparisonTrainer(dataset_root = args.dataset_folder,
                                        feature_root = args.feature_folder,
+                                       feature_key = args.feature_key,
                                        num_augs = args.num_augs,
                                        fill_with_exact = args.fill_with_exact,
                                        falloff_angle = args.falloff_angle*np.pi/180.0,

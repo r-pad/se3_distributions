@@ -6,15 +6,22 @@ from object_pose_utils.utils import to_np
 from quat_math import quaternion_matrix, quaternion_from_matrix
 
 def evaluateDenseFusion(model, img, points, choose, obj, 
-        refine_model = None, return_all = False):
+        refine_model = None, return_all = False, use_global_feat=True):
     df_obj_idx = obj - 1
     img = img.unsqueeze(0).cuda()
     points = points.unsqueeze(0).cuda()
     choose = choose.unsqueeze(0).cuda()
     df_obj_idx = df_obj_idx.unsqueeze(0).cuda()
     
-    feat = model.globalFeature(img, points, choose, df_obj_idx)
-    pred_r, pred_t, pred_c, emb = model(img, points, choose, df_obj_idx)
+    pred_r, pred_t, pred_c, emb, feat_local, feat_global = model.allFeatures(img, points, choose, df_obj_idx)
+    
+    if(use_global_feat):
+        feat = feat_global
+    else:
+        feat = feat_local
+
+    #feat = model.globalFeature(img, points, choose, df_obj_idx)
+    #pred_r, pred_t, pred_c, emb = model(img, points, choose, df_obj_idx)
 
     how_max, which_max = torch.max(pred_c, 1)
     if(pred_t.shape[1] == points.shape[1]):
@@ -29,6 +36,9 @@ def evaluateDenseFusion(model, img, points, choose, obj,
     max_q = to_np(pred_q[which_max.item()])
     max_t = to_np(pred_t[which_max.item()])
     
+    if(not use_global_feat):
+        feat = feat[:, :, which_max.item()]
+        
     if(refine_model is not None):
         num_points = points.shape[1]
         for _ in range(0, 2):
