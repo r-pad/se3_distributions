@@ -30,7 +30,6 @@ def main():
         print('Rendering {}'.format(cls_idx))
         dataset.setObject(cls_idx)            
         dataset.generateRenderedImages()
-    import IPython; IPython.embed()
 
 if __name__=='__main__':
     main()

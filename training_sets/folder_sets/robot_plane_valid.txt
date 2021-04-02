@@ -1,2 +1,0 @@
-/scratch/bokorn/data/robot_data/plane/plane_4
-/scratch/bokorn/data/robot_data/plane/plane_5

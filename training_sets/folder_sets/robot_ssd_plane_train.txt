@@ -1,6 +1,0 @@
-/ssd0/bokorn/data/robot_data/plane/plane_1
-/ssd0/bokorn/data/robot_data/plane/plane_2
-/ssd0/bokorn/data/robot_data/plane/plane_3
-/ssd0/bokorn/data/robot_data/plane/plane_6
-/ssd0/bokorn/data/robot_data/plane/plane_7
-/ssd0/bokorn/data/robot_data/plane/plane_8

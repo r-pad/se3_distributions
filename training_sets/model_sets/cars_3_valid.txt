@@ -1,4 +1,0 @@
-/scratch/bokorn/data/models/shapenetcore/02958343/ebe05fb264a56628d7ef29ade0716b6c
-/scratch/bokorn/data/models/shapenetcore/02958343/e7b9a6485b15921d51a95aaa6caba1d3
-/scratch/bokorn/data/models/shapenetcore/02958343/f8dc466677c26ac6f63ee8a34069b7c5
-

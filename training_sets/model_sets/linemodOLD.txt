@@ -1,2 +1,0 @@
-/scratch/bokorn/data/benchmarks/linemod/cam/mesh.ply
-/scratch/bokorn/data/benchmarks/linemod/eggbox/mesh.ply
