@@ -2,7 +2,7 @@ set -e
 
 lr=1e-6
 
-python ../src/generic_pose/training/loglik_training.py \
+python ../src/se3_distributions/training/loglik_training.py \
     --weight_file '/scratch/bokorn/results/log_lik/posecnn_fc6_comp/lr_1e-6/2019-09-06_14-08-44/weights/checkpoint_9000.pth' \
     --log_dir '/scratch/bokorn/results/log_lik/posecnn_fc6_comp/lr_'$lr \
     --dataset_folder '/ssd0/datasets/ycb/YCB_Video_Dataset' \

@@ -2,7 +2,7 @@ set -e
 
 lr=1e-5
 
-python ../src/generic_pose/training/bingham_training_linemod.py \
+python ../src/se3_distributions/training/bingham_training_linemod.py \
     --log_dir '/scratch/bokorn/results/log_lik_linemod/df_global_iso/lr_'$lr \
     --dataset_folder '/ssd0/datasets/linemod/Linemod_preprocessed/' \
     --feature_folder '/scratch/datasets/linemod/' \

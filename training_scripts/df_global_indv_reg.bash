@@ -4,7 +4,7 @@ lr=1e-5
 
 for i in {1..21}
 do
-    python ../src/generic_pose/training/loglik_training.py \
+    python ../src/se3_distributions/training/loglik_training.py \
         --object_id ${i} \
         --log_dir '/scratch/bokorn/results/log_lik/df_global_reg_orig_all/'${i}'/lr_'$lr \
         --dataset_folder '/ssd0/datasets/ycb/YCB_Video_Dataset' \

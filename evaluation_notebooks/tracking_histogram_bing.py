@@ -102,7 +102,7 @@ def main():
                 '{}_vertices.pt'.format(ycb_dataset.classes[1])))
     grid_size = grid_vertices.shape[0]
 
-    from generic_pose.datasets.ycb_dataset import getYCBSymmeties
+    from se3_distributions.datasets.ycb_dataset import getYCBSymmeties
     from object_pose_utils.utils.pose_processing import symmetricAngularDistance, meanShift
     import pathlib
 

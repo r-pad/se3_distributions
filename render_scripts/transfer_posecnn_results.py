@@ -12,7 +12,7 @@ import numpy as np
 import scipy.io as sio
 from tqdm import tqdm
 
-from generic_pose.datasets.ycb_dataset import YCBDataset, ycbRenderTransform
+from se3_distributions.datasets.ycb_dataset import YCBDataset, ycbRenderTransform
 
 def loadImageSetIndex(data_dir, image_set='train'):
     """

@@ -4,12 +4,12 @@ from distutils.core import setup
 from setuptools import find_packages
 
 setup(
-    name='generic_pose',
+    name='se3_distributions',
     version='0.1dev',
     author='Brian Okorn',
     packages=find_packages('src'),
     package_dir={'': 'src'},
-    description='Estimate poses of image pairs',
+    description='Estimate pose distributions based on latent features',
     long_description=open('README.md').read(),
     package_data = {'': ['*.mat', '*.blend','*.npy']},
 )

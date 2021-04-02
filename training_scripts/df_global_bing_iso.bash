@@ -2,7 +2,7 @@ set -e
 
 lr=1e-5
 
-python ../src/generic_pose/training/bingham_training.py \
+python ../src/se3_distributions/training/bingham_training.py \
     --log_dir '/scratch/bokorn/results/log_lik/df_global_iso/lr_'$lr \
     --dataset_folder '/ssd0/datasets/ycb/YCB_Video_Dataset' \
     --feature_folder '/scratch/datasets/ycb/' \

@@ -3,7 +3,7 @@ set -e
 lr=1e-5
 topx=500
 
-python ../src/generic_pose/training/multiobject_feature_comparison_training_trainval.py \
+python ../src/se3_distributions/training/multiobject_feature_comparison_training_trainval.py \
     --log_dir '/scratch/bokorn/results/multi_object/df_local_global/trainval_lr_'$lr'_top_x'$topx \
     --dataset_folder '/ssd0/datasets/ycb/YCB_Video_Dataset' \
     --feature_folder '/scratch/bokorn/results/dense_fusion_local_orig_feat' \

@@ -12,7 +12,7 @@ import os
 import time
 import numpy as np
 
-from generic_pose.datasets.ycb_dataset import YCBDataset, ycbRenderTransform
+from se3_distributions.datasets.ycb_dataset import YCBDataset, ycbRenderTransform
        
 def main():
     from argparse import ArgumentParser

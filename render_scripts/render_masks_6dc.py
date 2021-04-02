@@ -8,7 +8,7 @@ import time
 def main():
     import os
     from torch.utils.data import DataLoader
-    from generic_pose.datasets.sixdc_dataset import SixDCDataset
+    from se3_distributions.datasets.sixdc_dataset import SixDCDataset
     from tqdm import tqdm
     from argparse import ArgumentParser
     
