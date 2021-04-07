@@ -33,7 +33,12 @@ pip install .
 To use the Bingham distribution code, install our our python wrapper to the Bingham Statistics Library from our fork. Follow the python install instructions [here](https://github.com/r-pad/bingham/blob/master/python/INSTALL).
 
 ### [DenseFusion](https://github.com/r-pad/DenseFusion)
-
+To install Dense Fusion as a stand alone library, generate new features, and to have access to the dropout version described in the paper, install our fork. To install, pip install in the root directory
+```
+pip install .
+```
+### [PoseCNN](https://github.com/r-pad/PoseCNN)
+To generate features for PoseCNN, use our fork and this [tool](https://github.com/r-pad/PoseCNN/blob/master/tools/calc_features_aug.py) or the [notebook](https://github.com/r-pad/PoseCNN/blob/master/PoseCNN_Dataset_and_Featureizer.ipynb).
 
 ## Installation
 This code should be installed as a stand alone library using pip in the root directory. 
@@ -53,3 +58,4 @@ See [notebooks/](notebooks/) for interactive examples of using our models and da
 See  [training_scripts/](training_scripts/) for example scripts for training orientation distribution networks.
 
 ## Renderer
+To render models for grids, you can use our stand alone Blender [renderer](https://github.com/r-pad/model_renderer) or pyrender.
