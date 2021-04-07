@@ -8,7 +8,7 @@ import time
 def main():
     import os
     from torch.utils.data import DataLoader
-    from generic_pose.datasets.benchmark_dataset import LinemodDataset
+    from se3_distributions.datasets.benchmark_dataset import LinemodDataset
     from tqdm import tqdm
     from argparse import ArgumentParser
     

@@ -1,3 +1,0 @@
-/scratch/bokorn/data/renders/car_42_renders/train/02958343/1e17510abe8f98bea697d949e28d773c
-/scratch/bokorn/data/renders/car_42_renders/train/02958343/3a98adfdc309cca9cec94038e2141ac1
-/scratch/bokorn/data/renders/car_42_renders/train/02958343/3de31527384b83aa8b442b65428b99da

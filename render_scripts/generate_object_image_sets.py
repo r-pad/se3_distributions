@@ -17,12 +17,12 @@ import os
 import time
 import numpy as np
 
-from generic_pose.datasets.ycb_dataset import YCBDataset, ycbRenderTransform
-from generic_pose.training.finetune_distance_utils import evaluateRenderedDistance
-from generic_pose.models.pose_networks import gen_pose_net, load_state_dict
-from generic_pose.losses.distance_utils import evaluateDataset 
-from generic_pose.utils.image_preprocessing import unprocessImages
-from generic_pose.eval.plot_accuracy import plotAccuracy
+from se3_distributions.datasets.ycb_dataset import YCBDataset, ycbRenderTransform
+from se3_distributions.training.finetune_distance_utils import evaluateRenderedDistance
+from se3_distributions.models.pose_networks import gen_pose_net, load_state_dict
+from se3_distributions.losses.distance_utils import evaluateDataset 
+from se3_distributions.utils.image_preprocessing import unprocessImages
+from se3_distributions.eval.plot_accuracy import plotAccuracy
 import resource
 rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
 resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))    

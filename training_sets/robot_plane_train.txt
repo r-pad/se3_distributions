@@ -1,6 +1,0 @@
-/scratch/bokorn/data/robot_data/plane/plane_1
-/scratch/bokorn/data/robot_data/plane/plane_2
-/scratch/bokorn/data/robot_data/plane/plane_3
-/scratch/bokorn/data/robot_data/plane/plane_6
-/scratch/bokorn/data/robot_data/plane/plane_7
-/scratch/bokorn/data/robot_data/plane/plane_8
