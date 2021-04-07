@@ -23,15 +23,15 @@ quat_math
 object_pose_utils
 pybingham
 
-This code can be run as a stand alone library by pip installing the root directory. 
+This code should be installed as a stand alone library using pip in the root directory. 
 ```
 pip install .
 ```
 ## Datasets
+Download the YCB-Video dataset from [here](https://rse-lab.cs.washington.edu/projects/posecnn/)
 
 ## Pretrained Weights and Feature Grid
-Download our pretrained models and generated feature grids at the link below.
-https://drive.google.com/drive/folders/1n6Ya0YfkGaXuWVEYlWvMs9coibZv5vKz?usp=sharing
+Download our pretrained models and generated feature grids [here](https://drive.google.com/drive/folders/1n6Ya0YfkGaXuWVEYlWvMs9coibZv5vKz?usp=sharing).
 
 ## Usage
 See [notebooks/](notebooks/) for interactive examples of using our models and datasets.
