@@ -17,12 +17,25 @@ If you find our work useful, please consider citing:
 
 ## Requirements
 
+### [quat_math](https://github.com/r-pad/quat_math)
+Library of orientation helper functions as well as a wrapper to Christoph Gohlke's original transform library.
+To install, pip install in the root directory
+```
+pip install .
+```
+### [object_pose_utils](https://github.com/r-pad/object_pose_utils)
+Utility functions, datasets, and wrapper to Julian Straub's 4D spherical descritization [code](https://github.com/jstraub/dpOptTrans)
+To install, pip install in the root directory
+```
+pip install .
+```
+### [pybingham](https://github.com/r-pad/bingham)
+To use the Bingham distribution code, install our our python wrapper to the Bingham Statistics Library from our fork. Follow the python install instructions [here](https://github.com/r-pad/bingham/blob/master/python/INSTALL).
+
+### [DenseFusion](https://github.com/r-pad/DenseFusion)
+
+
 ## Installation
-
-quat_math
-object_pose_utils
-pybingham
-
 This code should be installed as a stand alone library using pip in the root directory. 
 ```
 pip install .
