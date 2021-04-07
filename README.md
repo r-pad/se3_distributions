@@ -27,8 +27,10 @@ This code can be run as a stand alone library by pip installing the root directo
 ```
 pip install .
 ```
-## Pretrained Weights and Feature Grid
+## Datasets
 
+## Pretrained Weights and Feature Grid
+Download our pretrained models and generated feature grids at the link below.
 https://drive.google.com/drive/folders/1n6Ya0YfkGaXuWVEYlWvMs9coibZv5vKz?usp=sharing
 
 ## Usage
