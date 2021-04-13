@@ -10,7 +10,7 @@ If you find our work useful, please consider citing:
 @inproceedings{okorn2020learning,
     Author = {Okorn, Brian and Xu, Mengyun and Hebert, Martial and Held, David },
     Title = {Learning Orientation Distributions for Object Pose Estimation},
-    Journal   = {International Conference on Intelligent Robots and Systems (IROS)},
+    Journal = {International Conference on Intelligent Robots and Systems (IROS)},
     Year = {2020}
 }
 ```
