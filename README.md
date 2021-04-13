@@ -1,4 +1,8 @@
 # Learning Orientation Distributions for Object Pose Estimation
+<p align="center">
+	<img src ="assets/se3_dist_teaser.svg" width="1000" />
+</p>
+
 Created by Brian Okorn at [R-PaD lab](https://r-pad.github.io/) at the Carnegie Mellon Robotics Institute. 
 
 ## Overview
