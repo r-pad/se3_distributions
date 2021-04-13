@@ -1,68 +1,61 @@
-# generic_pose
-Generic Pose Estimation Network
+# Learning Orientation Distributions for Object Pose Estimation
+Created by Brian Okorn at [R-PaD lab](https://r-pad.github.io/) at the Carnegie Mellon Robotics Institute. 
 
+## Overview
+We introduce two learned methods for estimating a distribution over an object's orientation. Our methods take into account both the inaccuracies in the pose estimation as well as the object symmetries. Our first method, which regresses from deep learned features to an isotropic Bingham distribution, gives the best performance for orientation distribution estimation for non-symmetric objects. Our second method learns to compare deep features and generates a non-parameteric histogram distribution. This method gives the best performance on objects with unknown symmetries, accurately modeling both symmetric and non-symmetric objects, without any requirement of symmetry annotation. [Project](https://bokorn.github.io/orientation-distributions/), [arXiv](https://arxiv.org/abs/2007.01418).
+
+## Citation
+If you find our work useful, please consider citing:
+```
+@inproceedings{okorn2020learning,
+    Author = {Okorn, Brian and Xu, Mengyun and Hebert, Martial and Held, David },
+    Title = {Learning Orientation Distributions for Object Pose Estimation},
+    Journal = {International Conference on Intelligent Robots and Systems (IROS)},
+    Year = {2020}
+}
+```
+
+## Requirements
+
+### [quat_math](https://github.com/r-pad/quat_math)
+Library of orientation helper functions as well as a wrapper to Christoph Gohlke's original transform library.
+To install, pip install in the root directory
+```
+pip install .
+```
+### [object_pose_utils](https://github.com/r-pad/object_pose_utils)
+Utility functions, datasets, and wrapper to Julian Straub's 4D spherical descritization [code](https://github.com/jstraub/dpOptTrans)
+To install, pip install in the root directory
+```
+pip install .
+```
+### [pybingham](https://github.com/r-pad/bingham)
+To use the Bingham distribution code, install our our python wrapper to the Bingham Statistics Library from our fork. Follow the python install instructions [here](https://github.com/r-pad/bingham/blob/master/python/INSTALL).
+
+### [DenseFusion](https://github.com/r-pad/DenseFusion)
+To install Dense Fusion as a stand alone library, generate new features, and to have access to the dropout version described in the paper, install our fork. To install, pip install in the root directory
+```
+pip install .
+```
+### [PoseCNN](https://github.com/r-pad/PoseCNN)
+To generate features for PoseCNN, use our fork and this [tool](https://github.com/r-pad/PoseCNN/blob/master/tools/calc_features_aug.py) or the [notebook](https://github.com/r-pad/PoseCNN/blob/master/PoseCNN_Dataset_and_Featureizer.ipynb).
+
+## Installation
+This code should be installed as a stand alone library using pip in the root directory. 
+```
+pip install .
+```
 ## Datasets
-PoseImageDataset is the base dataset class for pose datasets. It is designed for use with pytorch's DataLoader. Child classes require getQuat, getImage, and \_\_len\_\_ to be implemented. The number of images being returned is controlled by loop_truth, which contains an array bools where cross model comparison is used if False and same model if True.
+Download the YCB-Video dataset from [here](https://rse-lab.cs.washington.edu/projects/posecnn/)
 
-### Standard Datasets
-NumpyImageDataset, found in generic_pose.datasets.numpy_dataset, is our standard pose dataset, used for both renders and data collects. This dataset takes in a text file containing a list of directories, the path to a directory, or a pkl of the data set. The directory structure should contain png images of the object as well as npy arrays of the objects orientation in the image. The directory structure should be of the form class/model/data.{png,npy}. Loading can be drastically speedup by saving the dataset to a pkl using the pkl_save_filename option.
+## Pretrained Weights and Feature Grid
+Download our pretrained models and generated feature grids [here](https://drive.google.com/drive/folders/1n6Ya0YfkGaXuWVEYlWvMs9coibZv5vKz?usp=sharing).
 
-```python
-data_loader = DataLoader(NumpyImageDataset(data_folders = '/path/to/data', img_size = (224, 224)),
-                         num_workers = 10, batch_size = 32, shuffle = True)
-# Loop over dataset
-for j (imgs, trans, quats, mdl_names, mdl_fns) in enumerate(data_loader):
-  pass
+## Usage
+See [notebooks/](notebooks/) for interactive examples of using our models and datasets.
 
-# Get a single batch of data (slower than for loop
-imgs, trans, quats, mdl_names, mdl_fns = next(iter(data_loader))
+## Training 
+See  [training_scripts/](training_scripts/) for example scripts for training orientation distribution networks.
 
-# All data is preprocessed for pytoch networks
-# imgs: list of images in loop. List of length 2, each element being a batch as 32 images. 
-# trans: list of transforms (quaternions) from imgs[n] to imgs[n+1]
-# quats: list of quaternions of imgs[n]
-# mdl_names: list of names of model in imgs[n]
-# mdl_fn: list of filepaths to mesh for imgs[n]  
-```
-### Benchmarking Datasets
-LinemodDataset, found in generic_pose.datasets.benchmark_dataset, can be used to benchmark against the Linemod dataset. Images can be masked using the object point cloud and known transforms by setting the use_mask flag. Prerendering these masks can be done using render_scripts/render_masks.py. 
-
-## Training
-### Pose Distance Training
-See generic_pose/training_scripts/shapenet/train_shapenet_alex_reg_45deg.bash
-### Pose Step Training
-See generic_pose/training_scripts/shapenet/cls/shapenet_step_45_sa_7_bin.bash
-### Pose Difference Training
-generic_pose/training_scripts/shapenet/distance/shapenet_exp_fo20_th25.bash
-### Tensorboard Logging w/ Pytorch
-Logger, found in generic_pose.training.logger, is a tensorboard logger pulled from [here] (https://gist.github.com/gyglim/1f8dfb1b5c82627ae3efcfbbadb9f514). It can be used to get pytorches live training status updates while still using pytorch. 
-
-```python
-train_logger = Logger(/dir/to/store/logs)
-# The summarys store the value with the given tag at the training index
-
-# Logging scalar values, like loss and error
-train_logger.scalar_summary('Error', error, idx)
-
-# Logging distributions, like weights or more compllicated error metrics
-train_logger.histo_summary('Weights', weights, idx)
-
-# Logging images
-train_logger.image_summary('Picture', img, idx)
-```
-
-## Renderer Pose Estimation
-ExemplarDistPoseEstimator found in generic_pose.eval.hyper_distance, renders the object in poses at distributed orientation, defined by subdivision of the 600-cell, and uses a trained distance network to estimate the closest matches. Those matches can then be subdivided, rendered and reestimated. Base level defines the granularity of the base level of orientations. It scales withe the 4th power, 0 = ~80 orientations, 1 = ~600, 2 = ~2000.   An example can be found in generic_pose/unit_tests/test_hyperpose.py
-
-```python
-dist_net = gen_pose_net('alexnet', 'sigmoid', output_dim = 1, pretrained = False)
-dist_net.load_state_dict(torch.load('weight_file.pth'))
-pose_estimator = ExemplarDistPoseEstimator(model_filename = 'mesh.ply',
-                                           dist_network = dist_net,
-                                           use_bpy_renderer = True,
-                                           base_level = 2)
-  
-diff = pose_estimator.estimate(img, preprocess=True)
-top_idx = np.argmax(diff)
-top_quat = pose_estimator.base_vertices[top_idx]
-```
+## Renderer
+To render models for grids, you can use our stand alone Blender [renderer](https://github.com/r-pad/model_renderer) or pyrender.
