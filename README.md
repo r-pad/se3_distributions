@@ -21,6 +21,12 @@ If you find our work useful, please consider citing:
 
 ## Requirements
 
+* pytorch 1.7.0
+* numpy
+* PIL
+* scipy
+* tqdm
+
 ### [quat_math](https://github.com/r-pad/quat_math)
 Library of orientation helper functions as well as a wrapper to Christoph Gohlke's original transform library.
 To install, pip install in the root directory
